@@ -3,6 +3,18 @@
 :root {
   --background: #f9fafb;
   --foreground: #142222;
+
+  --branding-50: #fdeaea;
+  --branding-100: #f9c7c7;
+  --branding-200: #f39b9b;
+  --branding-300: #ed6f6f;
+  --branding-400: #e84a4a;
+  --branding-500: #e02222;
+  --branding-600: #b01a1a;
+  --branding-700: #801111;
+  --branding-800: #5b0c0c;
+  --branding-900: #350606;
+  --branding-950: #1a0303;
 }
 
 @theme inline {
