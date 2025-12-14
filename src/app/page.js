@@ -8,24 +8,35 @@ import { useState } from "react";
 
 export default function Home() {
   return (
-    <main className="grid grid-flow-row h-full gap-7">
-      <section
-        className="relative w-full h-[50vh] md:h-[65vh] lg:h-[75vh]"
-        style={{
-          WebkitMaskImage:
-            "linear-gradient(to bottom, white 70%, transparent 100%)",
-          maskImage: "linear-gradient(to bottom, white 70%, transparent 100%)",
-        }}
-      >
+    <div className="grid grid-flow-row h-full gap-7">
+      <section className="relative w-full h-[50vh] md:h-[65vh] lg:h-[75vh]">
         <Image
           src="/banner-alternate.png"
           alt="Banner photo"
           fill
           className="object-cover"
+          style={{
+            WebkitMaskImage:
+              "linear-gradient(to bottom, white 70%, transparent 100%)",
+            maskImage:
+              "linear-gradient(to bottom, white 70%, transparent 100%)",
+            filter: "brightness(0.80) contrast(1.2)",
+          }}
           priority
         />
         <div className="flex flex-col absolute top-1/2 w-full px-5 md:px-15 lg:px-25 text-neutral-50">
-          <h1 className="w-full text-center scale-y-85 font-extrabold font-syne text-3xl md:text-7x1 lg:text-9xl text-shadow-neutral-300 text-shadow-lg transition-shadow">
+          <h1
+            className="w-full text-center scale-y-85 font-extrabold font-syne text-3xl md:text-7xl lg:text-9xl"
+            style={{
+              textShadow: `
+                0 1px 0 var(--branding-700),
+                0 2px 0 var(--branding-700),
+                0 3px 0 var(--branding-700),
+                0 4px 0 var(--branding-700),
+                0 5px 0 var(--branding-700)
+              `,
+            }}
+          >
             D1TRAILERS
           </h1>
           <h2 className="w-full text-center font-sarina text-md md:text-lg lg:text-2xl ">
@@ -136,7 +147,7 @@ export default function Home() {
           </QuestionCard>
         </div>
       </Section>
-    </main>
+    </div>
   );
 }
 
@@ -146,7 +157,7 @@ function QuestionCard({ title, children }) {
   return (
     <button
       onClick={() => setExpanded(!expanded)}
-      className="bg-neutral-50 dark:bg-neutral-700 dark:hover:bg-neutral-800 hover:bg-neutral-100 ease-in-out shadow-sm p-5 rounded-2xl hover:shadow-md transition-[shadow_colors] duration-300 w-full text-left"
+      className="group bg-neutral-50 dark:bg-neutral-700 dark:hover:bg-neutral-800 hover:bg-neutral-100 ease-in-out shadow-sm p-5 rounded-2xl hover:shadow-md transition-[shadow_colors] duration-300 w-full text-left"
     >
       <div
         className="w-full flex flex-row justify-between items-start border-b-4 pb-4 gap-5"
@@ -162,10 +173,12 @@ function QuestionCard({ title, children }) {
         </div>
       </div>
       <div
-        className={`w-full overflow-hidden transition-[height_opacity_margin] duration-300 ease-in-out 
-    ${expanded ? "max-h-screen opacity-100 mt-5" : "max-h-0 opacity-0 mt-0"}`}
+        className={`w-full overflow-hidden transition-[height_opacity_margin] duration-300 ease-in-out text-neutral-300
+    ${expanded ? "max-h-screen opacity-100 mt-5" : "max-h-0 opacity-0 mt-0 "}`}
       >
-        {children}
+        <div className="text-neutral-600 dark:text-neutral-400 leading-snug flex flex-col gap-2 mt-2 bg-neutral-50 dark:bg-neutral-800 group-hover:dark:bg-neutral-900 p-3 rounded-lg shadow-inner transition-colors duration-300">
+          {children}
+        </div>
       </div>
     </button>
   );
@@ -173,7 +186,7 @@ function QuestionCard({ title, children }) {
 
 function ServiceCard({ name, cost, imageSrc, info }) {
   return (
-    <Card className="bg-neutral-50 dark:bg-neutral-700 p-4 md:p-6 rounded-2xl shadow-sm flex flex-col gap-4 hover:shadow-md hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-[shadow_colors] duration-300">
+    <Card className="group bg-neutral-50 dark:bg-neutral-700 p-4 md:p-6 rounded-2xl shadow-sm flex flex-col gap-4 hover:shadow-md hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-[shadow_colors] duration-300">
       <div
         className="flex items-center gap-4 md:gap-6 border-b-4 pb-4"
         style={{ borderColor: "var(--branding-600)" }}
@@ -191,7 +204,7 @@ function ServiceCard({ name, cost, imageSrc, info }) {
           {name}
         </h4>
       </div>
-      <div className="flex flex-col gap-2 mt-2 bg-neutral-50 dark:bg-neutral-900 p-3 rounded-lg shadow-inner">
+      <div className="flex flex-col gap-2 mt-2 bg-neutral-50 dark:bg-neutral-800 group-hover:dark:bg-neutral-900 p-3 rounded-lg shadow-inner transition-colors duration-300">
         {cost && (
           <span className="text-neutral-800 dark:text-neutral-100 font-semibold">
             {cost}

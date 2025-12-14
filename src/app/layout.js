@@ -32,7 +32,7 @@ export default function RootLayout({ children }) {
         className={`${inter.variable} ${syne.variable} ${sarina.variable} light:text-neutral-950 dark:text-neutral-50 font-inter antialiased text-sm md:text-md lg:text-lg`}
       >
         <Header />
-        <div className="min-h-screen">{children}</div>
+        <main className="min-h-screen">{children}</main>
         <Footer />
       </body>
     </html>

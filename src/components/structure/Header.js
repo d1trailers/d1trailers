@@ -74,10 +74,10 @@ function HeaderMenu({ expanded, setExpanded }) {
 function HeaderNavigator() {
   const menuItems = [
     { label: "HOME", href: "/" },
-    { label: "CONTACT", href: "/" },
-    { label: "ABOUT", href: "/" },
-    { label: "POLICY", href: "/" },
-    { label: "PORTAL", href: "/" },
+    { label: "ABOUT", href: "/about" },
+    { label: "APPLY", href: "/apply" },
+    { label: "POLICY", href: "/policy" },
+    { label: "PORTAL", href: "/login" },
   ];
 
   return (
