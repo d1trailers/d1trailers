@@ -8,7 +8,10 @@ export default function Favicon({
   className = "",
 }) {
   return (
-    <Link href={href} className={className}>
+    <Link
+      href={href}
+      className={`contrast-100 lg:contrast-85 hover:contrast-100 transition-[filter] duration-300 ease-in-out ${className}`}
+    >
       <Image src={src} alt={alt} width={100} height={100} />
     </Link>
   );

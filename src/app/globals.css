@@ -23,6 +23,7 @@
 
   --font-inter: var(--font-inter);
   --font-syne: var(--font-syne);
+  --font-sarina: var(--font-sarina);
 }
 
 @media (prefers-color-scheme: dark) {

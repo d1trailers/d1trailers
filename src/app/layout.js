@@ -1,4 +1,4 @@
-import { Inter, Syne } from "next/font/google";
+import { Inter, Sarina, Syne } from "next/font/google";
 import "./globals.css";
 import Header from "@/components/structure/Header";
 import Footer from "@/components/structure/Footer";
@@ -13,6 +13,13 @@ const syne = Syne({
   subsets: ["latin"],
 });
 
+const sarina = Sarina({
+  weight: "400",
+  variable: "--font-sarina",
+
+  subsets: ["latin"],
+});
+
 export const metadata = {
   title: "D1Trailers",
   description: "The Home of D1Trailers",
@@ -22,10 +29,10 @@ export default function RootLayout({ children }) {
   return (
     <html lang="en">
       <body
-        className={`${inter.variable} ${syne.variable} light:text-neutral-950 dark:text-neutral-50 font-inter antialiased text-sm md:text-md lg:text-lg`}>
+        className={`${inter.variable} ${syne.variable} ${sarina.variable} light:text-neutral-950 dark:text-neutral-50 font-inter antialiased text-sm md:text-md lg:text-lg`}
+      >
         <Header />
         <div className="min-h-screen">{children}</div>
-
         <Footer />
       </body>
     </html>
