@@ -6,14 +6,9 @@ import Card from "@/components/ui/Card";
 export default function Apply() {
   return (
     <div className="grid grid-flow-row w-full h-full gap-7 mt-25 p-5 md:px-35 lg:px-65">
-      <div className="flex flex-col gap-4">
-        <h2 className="font-syne text-3xl md:text-5xl lg:text-7xl font-bold">
-          Rental Application
-        </h2>
-        <p className="text-neutral-600 px-3 py-0.5 rounded-full bg-neutral-400 border-2 border-neutral-500 w-fit">
-          Updated November 2025
-        </p>
-      </div>
+      <h2 className="font-syne text-3xl md:text-5xl lg:text-7xl font-bold">
+        Rental Application
+      </h2>
       <Form />
     </div>
   );
@@ -21,7 +16,7 @@ export default function Apply() {
 
 function Form() {
   const inputClass =
-    "p-3 border border-neutral-700 rounded-lg bg-neutral-800 text-neutral-50 focus:outline-none focus:ring-2 focus:ring-(--branding-700)";
+    "p-3 border border-neutral-700 rounded-lg bg-neutral-200 dark:bg-neutral-800 text-neutral-950 dark:text-neutral-50 focus:outline-none focus:ring-2 focus:ring-(--branding-700)";
 
   const [formData, setFormData] = useState({});
 
@@ -39,15 +34,17 @@ function Form() {
   };
 
   return (
-    <Card className="w-full max-w-5x1 mx-auto bg-neutral-800 shadow-xl p-8 rounded-2xl">
+    <Card className="w-full max-w-5x1 mx-auto bg-neutral-200 dark:bg-neutral-800 shadow-sm p-8">
       <form onSubmit={handleSubmit} className="flex flex-col gap-8">
-        <header className="flex flex-col gap-2">
-          <h2 className="text-2xl font-bold text-neutral-50">Apply Now</h2>
-          <p className="text-sm text-neutral-400">
+        <section className="flex flex-col gap-2">
+          <h2 className="text-2xl font-bold text-neutral-950 dark:text-neutral-50">
+            Apply Now
+          </h2>
+          <p className="text-sm text-neutral-600 dark:text-neutral-400">
             Secure application form — your information is encrypted and
             confidential.
           </p>
-        </header>
+        </section>
         <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <input
             name="ownerFirstName"
@@ -88,7 +85,9 @@ function Form() {
           />
         </section>
         <section className="flex flex-col gap-4">
-          <h3 className="font-bold text-neutral-200">Owner Address</h3>
+          <h3 className="font-bold text-neutral-800 dark:text-neutral-200">
+            Owner Address
+          </h3>
           <input
             name="ownerAddress"
             placeholder="Street Address"
@@ -109,7 +108,9 @@ function Form() {
           </div>
         </section>
         <section className="flex flex-col gap-4">
-          <h3 className="font-bold text-neutral-200">Company Information</h3>
+          <h3 className="font-bold text-neutral-800 dark:text-neutral-200">
+            Company Information
+          </h3>
           <input
             name="companyName"
             placeholder="Company Name *"
@@ -167,7 +168,9 @@ function Form() {
           required
         />
         <section className="flex flex-col gap-4">
-          <h3 className="font-bold text-neutral-200">Required Documents</h3>
+          <h3 className="font-bold text-neutral-800 dark:text-neutral-200">
+            Required Documents
+          </h3>
           {[
             "Utility Bill (1 of 2)",
             "Utility Bill (2 of 2)",
@@ -177,7 +180,7 @@ function Form() {
           ].map((label, i) => (
             <label
               key={i}
-              className="flex flex-col gap-1 text-sm text-neutral-400"
+              className="flex flex-col gap-1 text-sm text-neutral-700 dark:text-neutral-400"
             >
               {label}
               <input
@@ -191,7 +194,9 @@ function Form() {
           ))}
         </section>
         <section className="flex flex-col gap-4">
-          <h3 className="font-bold text-neutral-200">Personal References</h3>
+          <h3 className="font-bold text-neutral-800 dark:text-neutral-200">
+            Personal References
+          </h3>
           {[1, 2, 3].map((n) => (
             <div key={n} className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <input
@@ -214,13 +219,13 @@ function Form() {
             className={inputClass}
             required
           />
-          <p className="text-xs text-neutral-400 leading-relaxed">
+          <p className="text-xs text-neutral-600 dark:text-neutral-400 leading-relaxed">
             Your SSN is collected for identity verification only and will not be
             used for credit approval. It is securely stored in accordance with
             our Privacy Policy.
           </p>
         </section>
-        <section className="flex flex-col gap-4 text-sm text-neutral-300">
+        <section className="flex flex-col gap-4 text-sm text-neutral-700 dark:text-neutral-300">
           <label className="flex gap-2">
             <input type="checkbox" name="ssnAuth" required />I authorize D1
             Trailers, LLC to securely store my SSN under the conditions

@@ -97,7 +97,7 @@ function HeaderItem({ label, href }) {
     <Link
       href={href}
       className={
-        "relative text-lg font-bold text-neutral-50 after:block after:h-0.5 no-underline! hover:no-underline! after:w-0 after:bg-current after:transition-all after:duration-300 hover:md:after:w-full"
+        "relative text-lg font-bold light:text-(--branding-700) dark:text-neutral-50 after:block after:h-0.5 no-underline! hover:no-underline! after:w-0 after:bg-current after:transition-all after:duration-300 hover:md:after:w-full"
       }
     >
       {label}

@@ -178,7 +178,7 @@ function QuestionCard({ title, children }) {
         className={`w-full overflow-hidden transition-[height_opacity_margin] duration-300 ease-in-out text-neutral-300
     ${expanded ? "max-h-screen opacity-100 mt-5" : "max-h-0 opacity-0 mt-0 "}`}
       >
-        <div className="text-neutral-600 dark:text-neutral-400 leading-snug flex flex-col gap-2 mt-2 bg-neutral-50 dark:bg-neutral-800 group-hover:dark:bg-neutral-900 p-3 rounded-lg shadow-inner transition-colors duration-300">
+        <div className="text-neutral-600 dark:text-neutral-400 leading-snug flex flex-col text-balance gap-2 mt-2 bg-neutral-50 dark:bg-neutral-800 group-hover:dark:bg-neutral-900 p-3 rounded-lg shadow-inner transition-colors duration-300">
           {children}
         </div>
       </div>
