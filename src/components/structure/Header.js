@@ -3,7 +3,6 @@
 import { useState, useEffect } from "react";
 import { Bars3Icon, XMarkIcon } from "@heroicons/react/20/solid";
 import Link from "next/link";
-import Image from "next/image";
 import Favicon from "./Favicon";
 
 export default function Header() {
@@ -22,7 +21,7 @@ export default function Header() {
       className={`fixed inset-0 z-50 w-full overflow-hidden transition-[height_backdrop] duration-750 border-b-4 md:border-none
 			${
         expanded
-          ? "h-85 md:h-25 md:backdrop-blur-none backdrop-blur-sm border-(--branding-700) dark:border-neutral-50"
+          ? "h-75 md:h-25 md:backdrop-blur-none backdrop-blur-sm border-(--branding-700) dark:border-neutral-50"
           : "h-25 backdrop-blur-none border-none"
       }
 
@@ -74,7 +73,6 @@ function HeaderMenu({ expanded, setExpanded }) {
 function HeaderNavigator() {
   const menuItems = [
     { label: "HOME", href: "/" },
-    { label: "ABOUT", href: "/about" },
     { label: "APPLY", href: "/apply" },
     { label: "POLICY", href: "/policy" },
     { label: "PORTAL", href: "/login" },
@@ -99,7 +97,7 @@ function HeaderItem({ label, href }) {
     <Link
       href={href}
       className={
-        "relative text-lg font-bold text-neutral-50 after:block after:h-0.5 after:w-0 after:bg-current after:transition-all after:duration-750 hover:md:after:w-full"
+        "relative text-lg font-bold text-neutral-50 after:block after:h-0.5 no-underline! hover:no-underline! after:w-0 after:bg-current after:transition-all after:duration-300 hover:md:after:w-full"
       }
     >
       {label}

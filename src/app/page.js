@@ -81,10 +81,11 @@ export default function Home() {
           <QuestionCard title="What are the requirements to rent?">
             <div className="flex flex-col gap-5 justify-start text-left">
               <p>
-                To rent a dry van from D1 Trailers, you need property damage
-                insurance to cover any potential loss or theft. A fully
-                refundable deposit is also required, which will be returned if
-                the equipment is in good condition upon return.
+                To rent a dry van from{" "}
+                <span className="font-syne font-bold">D1Trailers</span>, you
+                need property damage insurance to cover any potential loss or
+                theft. A fully refundable deposit is also required, which will
+                be returned if the equipment is in good condition upon return.
               </p>
               <p>
                 Additionally, there is a minimum rental period of 3 months to
@@ -113,11 +114,12 @@ export default function Home() {
           <QuestionCard title="How quickly can I rent a trailer, and what is the process?">
             <div className="flex flex-col gap-5 justify-start text-left">
               <p>
-                You can rent a trailer from D1 Trailers within 48 hours! Simply
-                complete an application, and our compliance team will review it
-                promptly. Once approved, we'll contact you to arrange a
-                convenient time to meet and secure your unit. Our streamlined
-                process ensures a quick and hassle-free experience.
+                You can rent a trailer from{" "}
+                <span className="font-syne font-bold">D1Trailers</span> within
+                48 hours! Simply complete an application, and our compliance
+                team will review it promptly. Once approved, we'll contact you
+                to arrange a convenient time to meet and secure your unit. Our
+                streamlined process ensures a quick and hassle-free experience.
               </p>
             </div>
           </QuestionCard>

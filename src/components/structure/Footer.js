@@ -9,7 +9,7 @@ export default function Footer() {
   return (
     <footer className="bg-neutral-900 text-neutral-50 py-16 px-6 md:px-20 flex flex-col gap-12">
       <div className="flex flex-col md:flex-row gap-12 w-full justify-between items-start">
-        <FooterColumn title="Contact Info">
+        <FooterColumn title="Contact Us">
           <div className="flex flex-col gap-3 mt-4 font-bold">
             <div className="flex items-center gap-3">
               <EnvelopeIcon className="w-5 h-5 text-brand" />
