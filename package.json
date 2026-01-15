@@ -10,7 +10,11 @@
   },
   "dependencies": {
     "@heroicons/react": "^2.2.0",
+    "cookie": "^1.1.1",
+    "googleapis": "^170.0.0",
+    "jsonwebtoken": "^9.0.3",
     "next": "16.0.10",
+    "nodemailer": "^7.0.12",
     "react": "19.2.1",
     "react-dom": "19.2.1"
   },
