@@ -10,13 +10,8 @@ export const authOptions = {
 		}),
 	],
 	secret: process.env.NEXTAUTH_SECRET,
-	session: {
-		strategy: "jwt",
-	},
-	adapter: undefined,
-	pages: {
-		signIn: "/login",
-	},
+	session: { strategy: "jwt" },
+	pages: { signIn: "/login" },
 };
 
 const handler = NextAuth(authOptions);
