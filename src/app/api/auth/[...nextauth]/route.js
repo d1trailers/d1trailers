@@ -1,5 +1,7 @@
 import NextAuth from "next-auth";
+import { PrismaAdapter } from "@next-auth/prisma-adapter";
 import EmailProvider from "next-auth/providers/email";
+import { prisma } from "../../lib/prisma";
 
 export const authOptions = {
 	providers: [
@@ -9,11 +11,11 @@ export const authOptions = {
 			maxAge: 24 * 60 * 60,
 		}),
 	],
+	adapter: PrismaAdapter(prisma),
 	secret: process.env.NEXTAUTH_SECRET,
 	session: {
-		strategy: "jwt",
+		strategy: "database",
 	},
-	adapter: undefined,
 	pages: {
 		signIn: "/login",
 	},
