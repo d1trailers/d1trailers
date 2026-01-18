@@ -12,12 +12,19 @@ export default function Login() {
 	async function handleSubmit(e) {
 		e.preventDefault();
 		setLoading(true);
+		setError("");
 
-		await fetch("/api/auth/send-magic-link", {
+		const res = await fetch("/api/send-magic-link", {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify({ email }),
 		});
+
+		if (!res.ok) {
+			setError("Failed to send login link");
+			setLoading(false);
+			return;
+		}
 
 		setSent(true);
 		setLoading(false);

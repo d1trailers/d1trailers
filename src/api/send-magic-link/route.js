@@ -1,25 +1,31 @@
-import { authOptions } from "../auth/[...nextauth]/route";
-import { getServerSession } from "next-auth";
+import crypto from "crypto";
 
 export async function POST(req) {
 	const { email } = await req.json();
 
-	if (!email)
+	if (!email) {
 		return new Response(JSON.stringify({ error: "Email required" }), {
 			status: 400,
 		});
-
-	try {
-		console.log("Pretend sending magic link to:", email);
-
-		return new Response(
-			JSON.stringify({ message: "Magic link sent (testing mode)" }),
-			{ status: 200 }
-		);
-	} catch (err) {
-		return new Response(
-			JSON.stringify({ error: "Failed to send magic link" }),
-			{ status: 500 }
-		);
 	}
+
+	const token = crypto.randomBytes(32).toString("hex");
+	const callbackUrl = `${process.env.NEXTAUTH_URL}/portal`;
+
+	const magicLink =
+		`${process.env.NEXTAUTH_URL}/api/auth/callback/email` +
+		`?email=${encodeURIComponent(email)}` +
+		`&token=${token}` +
+		`&callbackUrl=${encodeURIComponent(callbackUrl)}`;
+
+	console.log("========== MAGIC LINK (TEST MODE) ==========");
+	console.log(magicLink);
+	console.log("============================================");
+
+	return new Response(
+		JSON.stringify({
+			message: "Magic link generated (check server console)",
+		}),
+		{ status: 200 }
+	);
 }
