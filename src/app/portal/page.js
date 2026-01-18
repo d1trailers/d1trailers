@@ -1,25 +1,31 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import Card from "@/components/ui/Card";
-import Image from "next/image";
 import Link from "next/link";
+import Image from "next/image";
 
 export default function Portal() {
+	const [data, setData] = useState(null);
+	const [error, setError] = useState("");
+
 	useEffect(() => {
-		async function loadPortalData() {
+		async function loadData() {
 			const res = await fetch("/api/portal");
 
 			if (!res.ok) {
-				console.error("Failed to load portal data");
+				setError("Failed to load portal data");
 				return;
 			}
 
-			const data = await res.json();
-			console.log("PORTAL DATA:", data);
+			const json = await res.json();
+
+			setData(json);
+
+			console.log(json);
 		}
 
-		loadPortalData();
+		loadData();
 	}, []);
 
 	const rentals = [
@@ -121,5 +127,95 @@ export default function Portal() {
 				</div>
 			</section>
 		</div>
+	);
+}
+
+function DocumentCard({ document }) {
+	return (
+		<Card className="w-full max-w-lg bg-neutral-200 dark:bg-neutral-800 shadow-sm p-5 gap-5">
+			<h3 className="text-lg font-semibold text-neutral-900 dark:text-neutral-50 truncate">
+				{document.name}
+			</h3>
+			<Link
+				href={document.href}
+				className="w-full h-40 flex items-center justify-center bg-neutral-300 dark:bg-neutral-700 rounded-lg overflow-hidden"
+			>
+				{document.preview ? (
+					<Image
+						src={document.preview}
+						alt={document.name}
+						width={160}
+						height={160}
+						className="object-contain"
+					/>
+				) : (
+					<div className="flex flex-col items-center justify-center text-neutral-500">
+						<svg
+							xmlns="http://www.w3.org/2000/svg"
+							className="h-6 w-12"
+							fill="none"
+							viewBox="0 0 24 24"
+							stroke="currentColor"
+							strokeWidth={2}
+						>
+							<path
+								strokeLinecap="round"
+								strokeLinejoin="round"
+								d="M12 4v16m8-8H4"
+							/>
+						</svg>
+						<span className="text-sm mt-2">No Preview</span>
+					</div>
+				)}
+			</Link>
+
+			{document.size && (
+				<p className="text-sm text-neutral-600 dark:text-neutral-400">
+					Size: {document.size}
+				</p>
+			)}
+			{document.type && (
+				<p className="text-sm text-neutral-600 dark:text-neutral-400">
+					Type: {document.type}
+				</p>
+			)}
+		</Card>
+	);
+}
+
+function RentalCard({ rental }) {
+	return (
+		<Card className="w-full max-w-lg bg-neutral-200 dark:bg-neutral-800 shadow-sm p-5 gap-5">
+			<div className="flex items-center justify-between">
+				<h3 className="text-lg font-semibold text-neutral-900 dark:text-neutral-50 truncate">
+					{rental.type}
+				</h3>
+				<span
+					className={`px-3 py-1 rounded-full text-sm font-semibold border-2 ${
+						rental.status === "Active"
+							? "bg-green-300 text-green-800 border-green-500"
+							: "bg-gray-100 text-gray-800 border-gray-300"
+					}`}
+				>
+					{rental.status}
+				</span>
+			</div>
+			<div className="flex items-center gap-3">
+				<Image
+					src="/Trailer.png"
+					alt="Trailer Icon"
+					width={32}
+					height={32}
+					className="rounded-full p-1 bg-neutral-400"
+				/>
+				<p className="font-medium text-neutral-700 dark:text-neutral-300">
+					{rental.plate}
+				</p>
+			</div>
+			<div className="flex gap-5 justify-between text-sm text-neutral-600 dark:text-neutral-400">
+				<p>Rental Started: {rental.date}</p>
+				<p>Billing: {rental.billing}</p>
+			</div>
+		</Card>
 	);
 }

@@ -1,32 +1,23 @@
-import { getServerSession } from "next-auth";
-import { authOptions } from "../auth/[...nextauth]/route";
 import {
 	getClientByEmail,
 	getRentalsByEmail,
 	getDocumentsByEmail,
 } from "@/lib/airtable";
 
-export async function GET() {
-	const session = await getServerSession(authOptions);
+export async function GET(req) {
+	const email = req.cookies.get("email")?.value;
 
-	if (!session || !session.user?.email) {
+	if (!email) {
 		return new Response(JSON.stringify({ error: "Unauthorized" }), {
 			status: 401,
 		});
 	}
 
-	const email = session.user.email;
-
 	const client = await getClientByEmail(email);
 	const rentals = await getRentalsByEmail(email);
 	const documents = await getDocumentsByEmail(email);
 
-	return new Response(
-		JSON.stringify({
-			client,
-			rentals,
-			documents,
-		}),
-		{ status: 200 }
-	);
+	return new Response(JSON.stringify({ client, rentals, documents }), {
+		status: 200,
+	});
 }

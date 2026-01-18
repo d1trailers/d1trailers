@@ -21,7 +21,7 @@ export default function Login() {
 		});
 
 		if (!res.ok) {
-			setError("Failed to send login link");
+			setError("Failed to generate magic link");
 			setLoading(false);
 			return;
 		}

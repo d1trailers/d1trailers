@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import jwt from "jsonwebtoken";
 
 export async function POST(req) {
 	const { email } = await req.json();
@@ -9,23 +10,19 @@ export async function POST(req) {
 		});
 	}
 
-	const token = crypto.randomBytes(32).toString("hex");
-	const callbackUrl = `${process.env.NEXTAUTH_URL}/portal`;
+	// Create a short-lived JWT token for the magic link
+	const token = jwt.sign({ email }, process.env.NEXTAUTH_SECRET, {
+		expiresIn: "15m",
+	});
 
-	const magicLink =
-		`${process.env.NEXTAUTH_URL}/api/auth/callback/email` +
-		`?email=${encodeURIComponent(email)}` +
-		`&token=${token}` +
-		`&callbackUrl=${encodeURIComponent(callbackUrl)}`;
+	const magicLink = `${process.env.NEXTAUTH_URL}/api/verify-magic-link?token=${token}`;
 
 	console.log("========== MAGIC LINK (TEST MODE) ==========");
 	console.log(magicLink);
 	console.log("============================================");
 
 	return new Response(
-		JSON.stringify({
-			message: "Magic link generated (check server console)",
-		}),
+		JSON.stringify({ message: "Magic link generated (check console)" }),
 		{ status: 200 }
 	);
 }
