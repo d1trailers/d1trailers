@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Card from "@/components/ui/Card";
-import Link from "next/link";
 import Image from "next/image";
+import Link from "next/link";
 
 export default function Portal() {
 	const [data, setData] = useState(null);
@@ -12,208 +12,146 @@ export default function Portal() {
 	useEffect(() => {
 		async function loadData() {
 			const res = await fetch("/api/portal");
-
 			if (!res.ok) {
 				setError("Failed to load portal data");
 				return;
 			}
-
 			const json = await res.json();
-
+			console.log("PORTAL DATA:", json);
 			setData(json);
 		}
-
 		loadData();
 	}, []);
 
-	const rentals = [
-		{
-			type: "Dry Van Trailer",
-			plate: "TX-38472",
-			date: "March 12, 2025",
-			billing: "Monthly",
-			status: "Active",
-		},
-		{
-			type: "Dry Van Trailer",
-			plate: "TX-38472",
-			date: "March 12, 2025",
-			billing: "Monthly",
-			status: "Active",
-		},
-	];
+	if (error) {
+		return <p className="p-10 text-red-600">{error}</p>;
+	}
 
-	const documents = [
-		{
-			name: "Rental Agreement",
-			href: "",
-		},
-	];
+	if (!data) {
+		return <p className="p-10">Loading portal…</p>;
+	}
+
+	const { customer, rentals } = data;
 
 	return (
-		<div className="grid grid-flow-row w-full h-full gap-7 mt-25 p-5 md:px-35 lg:px-65">
-			<section className="flex flex-col gap-3">
-				<p>Welcome,</p>
-				<h3 className="font-bold text-3xl md:text-4xl lg:text-5xl">
-					Acme Construction
-				</h3>
-				<div className="inline-flex gap-1 items-center w-fit bg-green-300 text-green-800 font-semibold text-sm px-4 py-1 rounded-full border-2 border-green-500 shadow-sm">
-					<Image src="/Trailer.png" alt="Trailer Icon" width={32} height={32} />
-					<span className="ml-2">2 Active Rentals</span>
+		<div className="grid gap-8 p-6 md:px-32 mt-25">
+			<section className="space-y-3">
+				<p className="text-sm text-neutral-500">Welcome,</p>
+				<h1 className="text-4xl font-bold">{customer.companyName}</h1>
+
+				<div className="inline-flex items-center gap-2 bg-green-300 text-green-800 px-4 py-1 rounded-full border-2 border-green-500">
+					<Image src="/Trailer.png" width={28} height={28} alt="" />
+					<span>{rentals.length} Active Rentals</span>
 				</div>
 			</section>
-
-			<Card className="bg-neutral-200 dark:bg-neutral-800 p-5 flex flex-wrap gap-5 justify-between">
-				<div>
-					<p className="text-sm text-neutral-500">Account</p>
-					<p className="font-semibold">Acme Construction</p>
-				</div>
-				<div>
-					<p className="text-sm text-neutral-500">Primary Email</p>
-					<p className="font-medium">billing@acme.com</p>
-				</div>
-				<div>
-					<p className="text-sm text-neutral-500">Status</p>
-					<span className="text-green-600 font-semibold">Active</span>
-				</div>
+			<Card className="p-5 flex flex-wrap gap-6 justify-between">
+				<Info label="Account" value={customer.companyName} />
+				<Info label="Primary Email" value={customer.email} />
+				<Info label="Status" value={customer.status} />
 			</Card>
-
 			<section className="space-y-5">
-				<h4 className="font-bold font-syne text-md md:text-lg lg:text-2xl">
-					Rentals Overview
-				</h4>
-				<div className="flex flex-wrap gap-10">
-					{rentals.map((rental, index) => (
-						<RentalCard key={index} rental={rental} />
+				<h2 className="text-2xl font-bold">Your Rentals</h2>
+
+				<div className="flex flex-wrap gap-8">
+					{rentals.map((rental) => (
+						<RentalCard key={rental.rentalId} rental={rental} />
 					))}
 				</div>
 			</section>
+			<section className="bg-neutral-100 dark:bg-neutral-800 rounded-2xl p-5 space-y-4">
+				<h2 className="text-xl font-bold">Billing</h2>
+				<p className="text-sm text-neutral-500">
+					Billing is securely handled through Stripe.
+				</p>
 
-			<section className="bg-neutral-100 dark:bg-neutral-800 rounded-2xl p-5 shadow-sm space-y-5">
-				<div className="flex justify-between items-center">
-					<h4 className="font-bold font-syne text-md md:text-lg lg:text-2xl">
-						Billing Overview
-					</h4>
-					<Link href="">Manage Billing</Link>
-				</div>
-			</section>
-
-			<div className="flex gap-4">
 				<Link
 					href="/api/pay-now"
-					className="px-5 py-3 rounded-xl w-full bg-neutral-900 text-neutral-50 font-semibold hover:bg-neutral-950"
+					className="inline-block bg-neutral-900 text-white px-5 py-3 rounded-xl font-semibold"
 				>
-					Pay Next Invoice
+					Manage Billing
 				</Link>
-
-				<Link
-					href=""
-					className="px-5 py-3 rounded-xl w-full border border-neutral-400 font-semibold"
-				>
-					Contact Support
-				</Link>
-			</div>
-
+			</section>
 			<section className="space-y-5">
-				<h4 className="font-bold font-syne text-md md:text-lg lg:text-2xl">
-					Your Documents
-				</h4>
-				<div className="flex flex-wrap gap-10">
-					{documents.map((document, index) => (
-						<DocumentCard key={index} document={document} />
-					))}
+				<h2 className="text-2xl font-bold">Documents</h2>
+
+				<div className="flex flex-wrap gap-8">
+					{rentals
+						.flatMap((r) => r.documents ?? [])
+						.filter(Boolean)
+						.map((doc) => (
+							<DocumentCard key={doc.documentId} document={doc} />
+						))}
 				</div>
 			</section>
 		</div>
 	);
 }
 
-function DocumentCard({ document }) {
-	return (
-		<Card className="w-full max-w-lg bg-neutral-200 dark:bg-neutral-800 shadow-sm p-5 gap-5">
-			<h3 className="text-lg font-semibold text-neutral-900 dark:text-neutral-50 truncate">
-				{document.name}
-			</h3>
-			<Link
-				href={document.href}
-				className="w-full h-40 flex items-center justify-center bg-neutral-300 dark:bg-neutral-700 rounded-lg overflow-hidden"
-			>
-				{document.preview ? (
-					<Image
-						src={document.preview}
-						alt={document.name}
-						width={160}
-						height={160}
-						className="object-contain"
-					/>
-				) : (
-					<div className="flex flex-col items-center justify-center text-neutral-500">
-						<svg
-							xmlns="http://www.w3.org/2000/svg"
-							className="h-6 w-12"
-							fill="none"
-							viewBox="0 0 24 24"
-							stroke="currentColor"
-							strokeWidth={2}
-						>
-							<path
-								strokeLinecap="round"
-								strokeLinejoin="round"
-								d="M12 4v16m8-8H4"
-							/>
-						</svg>
-						<span className="text-sm mt-2">No Preview</span>
-					</div>
-				)}
-			</Link>
+/* -------------------------------------------------- */
 
-			{document.size && (
-				<p className="text-sm text-neutral-600 dark:text-neutral-400">
-					Size: {document.size}
-				</p>
-			)}
-			{document.type && (
-				<p className="text-sm text-neutral-600 dark:text-neutral-400">
-					Type: {document.type}
-				</p>
-			)}
-		</Card>
+function Info({ label, value }) {
+	return (
+		<div>
+			<p className="text-sm text-neutral-500">{label}</p>
+			<p className="font-semibold">{value}</p>
+		</div>
 	);
 }
 
 function RentalCard({ rental }) {
+	const { trailer } = rental;
+
 	return (
-		<Card className="w-full max-w-lg bg-neutral-200 dark:bg-neutral-800 shadow-sm p-5 gap-5">
-			<div className="flex items-center justify-between">
-				<h3 className="text-lg font-semibold text-neutral-900 dark:text-neutral-50 truncate">
-					{rental.type}
-				</h3>
-				<span
-					className={`px-3 py-1 rounded-full text-sm font-semibold border-2 ${
-						rental.status === "Active"
-							? "bg-green-300 text-green-800 border-green-500"
-							: "bg-gray-100 text-gray-800 border-gray-300"
-					}`}
-				>
-					{rental.status}
-				</span>
+		<Card className="w-full max-w-lg p-5 space-y-4">
+			<div className="flex justify-between">
+				<h3 className="text-lg font-bold">{trailer.type}</h3>
+				<StatusBadge status={rental.status} />
 			</div>
+
 			<div className="flex items-center gap-3">
-				<Image
-					src="/Trailer.png"
-					alt="Trailer Icon"
-					width={32}
-					height={32}
-					className="rounded-full p-1 bg-neutral-400"
-				/>
-				<p className="font-medium text-neutral-700 dark:text-neutral-300">
-					{rental.plate}
-				</p>
+				<Image src="/Trailer.png" width={32} height={32} alt="" />
+				<p className="font-medium">{trailer.plate}</p>
 			</div>
-			<div className="flex gap-5 justify-between text-sm text-neutral-600 dark:text-neutral-400">
-				<p>Rental Started: {rental.date}</p>
-				<p>Billing: {rental.billing}</p>
+
+			<div className="text-sm text-neutral-600 space-y-1">
+				<p>Billing: {rental.billingFrequency}</p>
+				<p>Rate: ${rental.rate}</p>
+				<p>Next Billing Date: {rental.currentPeriodEnd ?? "—"}</p>
 			</div>
+		</Card>
+	);
+}
+
+function StatusBadge({ status }) {
+	const active = status === "Active";
+	return (
+		<span
+			className={`px-3 py-1 rounded-full text-sm font-semibold border-2 ${
+				active
+					? "bg-green-300 text-green-800 border-green-500"
+					: "bg-gray-200 text-gray-800 border-gray-400"
+			}`}
+		>
+			{status}
+		</span>
+	);
+}
+
+function DocumentCard({ document }) {
+	return (
+		<Card className="w-full max-w-sm p-5 space-y-3">
+			<h4 className="font-semibold">{document.type}</h4>
+			<p className="text-sm text-neutral-500">Uploaded {document.uploadedAt}</p>
+
+			{document.file && (
+				<Link
+					href={document.file.url}
+					target="_blank"
+					className="underline text-sm"
+				>
+					View Document
+				</Link>
+			)}
 		</Card>
 	);
 }
