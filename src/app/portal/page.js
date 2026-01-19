@@ -21,8 +21,6 @@ export default function Portal() {
 			const json = await res.json();
 
 			setData(json);
-
-			console.log(json);
 		}
 
 		loadData();
