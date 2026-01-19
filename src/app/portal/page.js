@@ -13,7 +13,9 @@ export default function Portal() {
 		async function loadData() {
 			const res = await fetch("/api/portal");
 			if (!res.ok) {
-				setError("Failed to load portal data");
+				setError(
+					"Encountered fatal error while attempting to load portal data"
+				);
 				return;
 			}
 			const json = await res.json();
@@ -26,10 +28,12 @@ export default function Portal() {
 		return (
 			<div className="flex min-h-screen w-full items-center justify-center p-5">
 				<Card className="w-full max-w-lg bg-neutral-200 dark:bg-neutral-800 shadow-sm p-8 gap-10">
-					<h2 className="text-2xl font-bold">
+					<h2 className="text-2xl font-bold w-full text-center">
 						{error ? "Error Loading Portal" : "Loading Portal"}
 					</h2>
-					{error && <p className="text-sm text-red-600">{error}</p>}
+					{error && (
+						<p className="text-sm font-semibold text-red-600">{error}</p>
+					)}
 				</Card>
 			</div>
 		);
@@ -39,7 +43,6 @@ export default function Portal() {
 
 	return (
 		<div className="grid grid-flow-row w-full h-full gap-7 mt-25 p-5 md:px-35 lg:px-65">
-			{/* Header */}
 			<section className="flex flex-col gap-3">
 				<p className="text-neutral-600 dark:text-neutral-400">Welcome,</p>
 				<h3 className="font-syne font-bold text-3xl md:text-4xl lg:text-5xl text-neutral-950 dark:text-neutral-50">
