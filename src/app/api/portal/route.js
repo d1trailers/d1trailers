@@ -1,37 +1,44 @@
 import {
-	getClientByEmail,
-	getRentalsByEmail,
-	getDocumentsByEmail,
+	getPortalDataByEmail,
+	isPortalEligibleCustomerStatus,
 } from "@/lib/airtable";
+import jwt from "jsonwebtoken";
 
 export async function GET(req) {
-	const email = req.cookies.get("email")?.value;
+	const sessionToken = req.cookies.get("portal_session")?.value;
 
-	if (!email) {
-		return Response.json(
-			{ error: "Unauthorized: missing email cookie" },
-			{ status: 401 }
-		);
+	if (!sessionToken) {
+		return Response.json({ error: "Unauthorized" }, { status: 401 });
 	}
 
-	const client = await getClientByEmail(email);
-
-	if (!client) {
-		return Response.json({ error: "Customer not found" }, { status: 404 });
+	if (!process.env.NEXTAUTH_SECRET) {
+		return Response.json({ error: "Server configuration error" }, { status: 500 });
 	}
 
-	const rentals = await getRentalsByEmail(email);
-	const documents = await getDocumentsByEmail(email);
+	try {
+		const payload = jwt.verify(sessionToken, process.env.NEXTAUTH_SECRET);
+		const email =
+			typeof payload === "object" && payload?.email
+				? String(payload.email).toLowerCase()
+				: null;
+		const tokenType =
+			typeof payload === "object" && payload?.type ? payload.type : null;
 
-	return Response.json({
-		customer: {
-			companyName: client.companyName,
-			primaryEmail: client.primaryEmail,
-			status: client.status,
-		},
+		if (!email || tokenType !== "portal-session") {
+			return Response.json({ error: "Unauthorized" }, { status: 401 });
+		}
 
-		rentals,
+		const portalData = await getPortalDataByEmail(email);
+		if (!portalData?.customer) {
+			return Response.json({ error: "Unauthorized" }, { status: 401 });
+		}
 
-		documents,
-	});
+		if (!isPortalEligibleCustomerStatus(portalData.customer.status)) {
+			return Response.json({ error: "Portal access is not available" }, { status: 403 });
+		}
+
+		return Response.json(portalData);
+	} catch {
+		return Response.json({ error: "Unauthorized" }, { status: 401 });
+	}
 }
