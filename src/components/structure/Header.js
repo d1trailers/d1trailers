@@ -113,7 +113,7 @@ function HeaderItem({ label, href, active, onHero, onNavigate }) {
 		<Link
 			href={href}
 			onClick={onNavigate}
-			className={`block rounded-lg px-3 py-2 text-sm md:text-base font-syne font-semibold transition-colors no-underline hover:no-underline ${
+			className={`no-underline! block rounded-lg px-3 py-2 text-sm md:text-base font-syne font-semibold transition-colors hover:no-underline ${
 				onHero
 					? active
 						? "bg-neutral-50/20 text-neutral-50"

@@ -110,13 +110,13 @@ export default function Home() {
 						<div className="flex flex-wrap gap-3">
 							<Link
 								href="/apply"
-								className="rounded-xl bg-(--branding-600) px-5 py-3 font-semibold text-neutral-50 no-underline hover:no-underline hover:bg-(--branding-700) transition-colors"
+								className="rounded-xl bg-(--branding-600) px-5 py-3 font-semibold text-neutral-50 no-underline! hover:no-underline hover:bg-(--branding-700) transition-colors"
 							>
 								Start Application
 							</Link>
 							<Link
 								href="/login"
-								className="rounded-xl border border-neutral-50/40 bg-neutral-900/25 px-5 py-3 font-semibold text-neutral-50 no-underline hover:no-underline hover:bg-neutral-900/40 transition-colors"
+								className="rounded-xl border border-neutral-50/40 bg-neutral-900/25 px-5 py-3 font-semibold text-neutral-50 no-underline! hover:no-underline hover:bg-neutral-900/40 transition-colors"
 							>
 								Client Portal
 							</Link>
