@@ -18,7 +18,9 @@ export default function AdminShell({ adminEmail, children }) {
 		<div className="w-full min-h-screen mt-25 p-5 md:px-10 lg:px-14 pb-10 motion-enter">
 			<div className="grid grid-cols-1 lg:grid-cols-[240px_1fr] gap-6">
 				<aside className="surface-panel rounded-2xl p-5 h-fit">
-					<p className="text-sm text-neutral-600 dark:text-neutral-400">Admin</p>
+					<p className="text-sm text-neutral-600 dark:text-neutral-400">
+						Admin
+					</p>
 					<p className="font-semibold text-neutral-950 dark:text-neutral-50 break-all">
 						{adminEmail}
 					</p>
@@ -31,7 +33,7 @@ export default function AdminShell({ adminEmail, children }) {
 								<Link
 									key={item.href}
 									href={item.href}
-									className={`rounded-lg px-3 py-2 text-sm font-semibold transition-colors no-underline hover:no-underline ${
+									className={`rounded-lg px-3 py-2 text-sm font-semibold transition-colors no-underline! hover:no-underline ${
 										active
 											? "bg-(--branding-700) text-neutral-50"
 											: "surface-subtle text-neutral-800 dark:text-neutral-100"
