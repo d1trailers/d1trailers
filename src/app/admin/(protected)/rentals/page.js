@@ -38,7 +38,9 @@ export default function AdminRentalsPage() {
 				if (!mounted) return;
 				if (!res.ok) {
 					setError(
-						typeof json?.error === "string" ? json.error : "Failed to load rentals."
+						typeof json?.error === "string"
+							? json.error
+							: "Failed to load rentals.",
 					);
 					setLoading(false);
 					return;
@@ -89,10 +91,7 @@ export default function AdminRentalsPage() {
 	return (
 		<div className="space-y-4">
 			{data.map((rental) => (
-				<Card
-					key={rental.rentalId}
-					className="motion-enter-delayed"
-				>
+				<Card key={rental.rentalId} className="motion-enter-delayed">
 					<div className="flex flex-wrap justify-between gap-3 items-start">
 						<div>
 							<h2 className="font-semibold text-lg text-neutral-950 dark:text-neutral-50">
@@ -103,7 +102,6 @@ export default function AdminRentalsPage() {
 							</p>
 						</div>
 						<div className="flex flex-col items-end gap-2">
-							<StatusBadge status={rental.status} />
 							<StatusBadge status={rental.billingStatus} />
 						</div>
 					</div>
@@ -131,7 +129,7 @@ export default function AdminRentalsPage() {
 							? rental.trailers
 									.map(
 										(trailer) =>
-											`${trailer.trailerType || "Trailer"} (${trailer.plateNumber || "No plate"})`
+											`${trailer.trailerType || "Trailer"} (${trailer.plateNumber || "No plate"})`,
 									)
 									.join(", ")
 							: "-"}

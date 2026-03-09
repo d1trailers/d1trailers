@@ -5,8 +5,11 @@ export async function GET(req, { params }) {
 	const auth = requireAdminApiSession(req);
 	if (auth.error) return auth.error;
 
+	const routeParams = await params;
 	const customerId =
-		typeof params?.customerId === "string" ? params.customerId.trim() : "";
+		typeof routeParams?.customerId === "string"
+			? routeParams.customerId.trim()
+			: "";
 	if (!customerId) {
 		return Response.json({ error: "Customer ID is required" }, { status: 400 });
 	}

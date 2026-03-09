@@ -613,11 +613,9 @@ const APPLICATION_REVIEW_CUSTOMER_STATUSES = new Set([
 ]);
 const APPLICATION_REVIEW_RENTAL_STATUSES = new Set([
 	"Submitted",
-	"Review",
-	"Needs Info",
-	"Awaiting Payment",
 	"Awaiting First Payment",
 ]);
+const RENTAL_STATUS_CANCELLED = "Cancelled ";
 
 const APPLICATION_DECISION_ACTIONS = {
 	APPROVE: "approve",
@@ -632,11 +630,11 @@ const APPLICATION_DECISION_OUTCOME = {
 	},
 	[APPLICATION_DECISION_ACTIONS.DENY]: {
 		customerStatus: "Denied",
-		rentalStatus: "Denied",
+		rentalStatus: RENTAL_STATUS_CANCELLED,
 	},
 	[APPLICATION_DECISION_ACTIONS.REQUEST_INFO]: {
 		customerStatus: "Needs Info",
-		rentalStatus: "Needs Info",
+		rentalStatus: "Submitted",
 	},
 };
 
@@ -919,16 +917,11 @@ export async function applyAdminApplicationDecision(customerId, decisionInput = 
 		typeof decisionInput.reviewNotes === "string"
 			? decisionInput.reviewNotes.trim()
 			: "";
-	const decisionBy =
-		typeof decisionInput.decisionBy === "string"
-			? decisionInput.decisionBy.trim()
-			: "";
 
 	const customerUpdateFields = sanitizeFieldsForUpdate({
 		[AIRTABLE_SCHEMA.FIELDS.CUSTOMERS.STATUS]: actionOutcome.customerStatus,
 		[AIRTABLE_SCHEMA.FIELDS.CUSTOMERS.REVIEWED_AT]: reviewedAt,
 		[AIRTABLE_SCHEMA.FIELDS.CUSTOMERS.REVIEW_NOTES]: reviewNotes || null,
-		[AIRTABLE_SCHEMA.FIELDS.CUSTOMERS.DECISION_BY]: decisionBy || undefined,
 	});
 
 	if (action === APPLICATION_DECISION_ACTIONS.APPROVE) {
