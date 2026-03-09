@@ -15,9 +15,9 @@ export default function AdminShell({ adminEmail, children }) {
 	const pathname = usePathname();
 
 	return (
-		<div className="w-full min-h-screen mt-25 p-5 md:px-10 lg:px-14">
+		<div className="w-full min-h-screen mt-25 p-5 md:px-10 lg:px-14 pb-10 motion-enter">
 			<div className="grid grid-cols-1 lg:grid-cols-[240px_1fr] gap-6">
-				<aside className="bg-neutral-200 dark:bg-neutral-800 rounded-2xl p-5 h-fit shadow-sm">
+				<aside className="surface-panel rounded-2xl p-5 h-fit">
 					<p className="text-sm text-neutral-600 dark:text-neutral-400">Admin</p>
 					<p className="font-semibold text-neutral-950 dark:text-neutral-50 break-all">
 						{adminEmail}
@@ -31,10 +31,10 @@ export default function AdminShell({ adminEmail, children }) {
 								<Link
 									key={item.href}
 									href={item.href}
-									className={`rounded-lg px-3 py-2 text-sm font-semibold transition-colors ${
+									className={`rounded-lg px-3 py-2 text-sm font-semibold transition-colors no-underline hover:no-underline ${
 										active
 											? "bg-(--branding-700) text-neutral-50"
-											: "bg-neutral-100 dark:bg-neutral-700 text-neutral-800 dark:text-neutral-100"
+											: "surface-subtle text-neutral-800 dark:text-neutral-100"
 									}`}
 								>
 									{item.label}
@@ -45,7 +45,7 @@ export default function AdminShell({ adminEmail, children }) {
 				</aside>
 
 				<section className="space-y-5">
-					<header className="bg-neutral-200 dark:bg-neutral-800 rounded-2xl p-5 shadow-sm">
+					<header className="surface-panel rounded-2xl p-5">
 						<h1 className="font-syne text-2xl md:text-3xl font-bold text-neutral-950 dark:text-neutral-50">
 							Owner Dashboard
 						</h1>

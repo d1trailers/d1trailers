@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Card from "@/components/ui/Card";
 import StateCard from "@/components/admin/StateCard";
 import StatusBadge from "@/components/admin/StatusBadge";
+import { LoadingCardGrid, LoadingPanel } from "@/components/ui/LoadingSkeleton";
 
 function formatDate(value) {
 	if (!value) return "-";
@@ -56,10 +57,13 @@ export default function AdminWatchlistPage() {
 
 	if (loading) {
 		return (
-			<StateCard
-				title="Loading Watchlist"
-				message="Fetching past due and suspended account data."
-			/>
+			<div className="space-y-4">
+				<LoadingPanel
+					title="Loading Watchlist"
+					subtitle="Fetching past due and suspended account data."
+				/>
+				<LoadingCardGrid count={3} />
+			</div>
 		);
 	}
 
@@ -81,7 +85,7 @@ export default function AdminWatchlistPage() {
 
 	return (
 		<div className="space-y-5">
-			<Card className="bg-neutral-200 dark:bg-neutral-800 shadow-sm">
+			<Card>
 				<h2 className="font-syne text-xl font-bold text-neutral-950 dark:text-neutral-50">
 					Customer Watchlist
 				</h2>
@@ -90,7 +94,7 @@ export default function AdminWatchlistPage() {
 						{data.customers.map((customer) => (
 							<div
 								key={customer.customerId}
-								className="rounded-lg bg-neutral-100 dark:bg-neutral-700 p-3 flex flex-wrap items-center justify-between gap-3"
+								className="surface-subtle rounded-lg p-3 flex flex-wrap items-center justify-between gap-3"
 							>
 								<div>
 									<p className="font-semibold text-neutral-950 dark:text-neutral-50">
@@ -114,7 +118,7 @@ export default function AdminWatchlistPage() {
 				)}
 			</Card>
 
-			<Card className="bg-neutral-200 dark:bg-neutral-800 shadow-sm">
+			<Card>
 				<h2 className="font-syne text-xl font-bold text-neutral-950 dark:text-neutral-50">
 					Overdue Rentals
 				</h2>
@@ -123,7 +127,7 @@ export default function AdminWatchlistPage() {
 						{data.rentals.map((rental) => (
 							<div
 								key={rental.rentalId}
-								className="rounded-lg bg-neutral-100 dark:bg-neutral-700 p-3 flex flex-wrap items-center justify-between gap-3"
+								className="surface-subtle rounded-lg p-3 flex flex-wrap items-center justify-between gap-3"
 							>
 								<div>
 									<p className="font-semibold text-neutral-950 dark:text-neutral-50">

@@ -7,21 +7,25 @@ import Card from "../ui/Card";
 
 export default function Footer() {
 	return (
-		<footer className="bg-neutral-900 text-neutral-50 py-16 px-6 md:px-20 flex flex-col gap-12">
-			<div className="flex flex-col md:flex-row gap-12 w-full justify-between items-start">
+		<footer className="p-5 md:px-12 lg:px-20 pb-12">
+			<div className="surface-panel rounded-2xl p-6 md:p-8 flex flex-col gap-10">
+				<div className="grid grid-cols-1 lg:grid-cols-3 gap-8 w-full">
 				<FooterColumn title="Contact Us">
-					<div className="flex flex-col gap-3 mt-4 font-bold">
+					<div className="flex flex-col gap-3 mt-4 font-semibold">
 						<div className="flex items-center gap-3">
-							<EnvelopeIcon className="w-5 h-5 text-brand" />
-							<a href="tel:4693191226" className="hover:text-brand transition">
+							<PhoneIcon className="w-5 h-5 text-(--branding-700)" />
+							<a
+								href="tel:4693191226"
+								className="hover:text-(--branding-700) transition"
+							>
 								469.319.1226
 							</a>
 						</div>
 						<div className="flex items-center gap-3">
-							<PhoneIcon className="w-5 h-5 text-brand" />
+							<EnvelopeIcon className="w-5 h-5 text-(--branding-700)" />
 							<a
 								href="mailto:inquiries@d1trailers.com"
-								className="hover:text-brand transition"
+								className="hover:text-(--branding-700) transition"
 							>
 								inquiries@d1trailers.com
 							</a>
@@ -30,17 +34,20 @@ export default function Footer() {
 				</FooterColumn>
 
 				<FooterColumn title="Quick Links">
-					<div className="flex flex-col gap-2 mt-4 font-bold">
-						<Link href="about" className="hover:text-brand transition">
-							About
+					<div className="flex flex-col gap-2 mt-4 font-semibold">
+						<Link href="/" className="hover:text-(--branding-700) transition">
+							Home
 						</Link>
-						<Link href="policy" className="hover:text-brand transition">
+						<Link href="/policy" className="hover:text-(--branding-700) transition">
 							Policy
 						</Link>
-						<Link href="apply" className="hover:text-brand transition">
+						<Link href="/apply" className="hover:text-(--branding-700) transition">
 							Apply
 						</Link>
-						<a href="sitemap.xml" className="hover:text-brand transition">
+						<Link href="/login" className="hover:text-(--branding-700) transition">
+							Portal Login
+						</Link>
+						<a href="/sitemap.xml" className="hover:text-(--branding-700) transition">
 							Site Map
 						</a>
 					</div>
@@ -51,20 +58,21 @@ export default function Footer() {
 						<FooterCard />
 					</div>
 				</FooterColumn>
-			</div>
+				</div>
 
-			<p className="w-full text-center text-neutral-400 mt-8 text-sm md:text-base">
-				&copy; {new Date().getFullYear()}{" "}
-				<span className="font-syne italic font-bold">RHE ENTERPRISES</span>, LLC
-			</p>
+				<p className="w-full text-center text-sm md:text-base text-neutral-600 dark:text-neutral-400">
+					&copy; {new Date().getFullYear()}{" "}
+					<span className="font-syne italic font-bold">RHE ENTERPRISES</span>, LLC
+				</p>
+			</div>
 		</footer>
 	);
 }
 
 function FooterColumn({ title, children }) {
 	return (
-		<section className="flex flex-col w-full md:w-1/3">
-			<h3 className="font-bold text-lg border-b-2 border-neutral-700 pb-2">
+		<section className="flex flex-col w-full">
+			<h3 className="font-bold text-lg border-b border-(--border-soft) pb-2">
 				{title}
 			</h3>
 			{children}
@@ -93,8 +101,11 @@ function FooterCard() {
 		console.log("Form Submitted:", formData);
 	};
 
+	const inputClass =
+		"p-3 border border-(--border-soft) rounded-lg bg-neutral-50 dark:bg-neutral-900/40 focus:outline-none focus:ring-2 focus:ring-(--branding-700)";
+
 	return (
-		<Card className="w-full shadow-lg bg-neutral-800 p-6 rounded-xl">
+		<Card className="surface-subtle w-full p-5 rounded-xl">
 			<form onSubmit={handleSubmit} className="flex flex-col gap-4">
 				<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 					<input
@@ -103,7 +114,7 @@ function FooterCard() {
 						value={formData.firstName}
 						onChange={handleChange}
 						placeholder="First Name"
-						className="p-3 border border-neutral-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-(--branding-700)"
+						className={inputClass}
 						required
 					/>
 					<input
@@ -112,7 +123,7 @@ function FooterCard() {
 						value={formData.lastName}
 						onChange={handleChange}
 						placeholder="Last Name"
-						className="p-3 border border-neutral-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-(--branding-700)"
+						className={inputClass}
 						required
 					/>
 				</div>
@@ -123,7 +134,7 @@ function FooterCard() {
 					value={formData.email}
 					onChange={handleChange}
 					placeholder="Email"
-					className="p-3 border border-neutral-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-(--branding-700)"
+					className={inputClass}
 					required
 				/>
 
@@ -133,7 +144,7 @@ function FooterCard() {
 					value={formData.duration}
 					onChange={handleChange}
 					placeholder="Duration of Rental * Required"
-					className="p-3 border border-neutral-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-(--branding-700)"
+					className={inputClass}
 					required
 				/>
 
@@ -141,7 +152,7 @@ function FooterCard() {
 					name="typeOfUse"
 					value={formData.typeOfUse}
 					onChange={handleChange}
-					className="p-3 border border-neutral-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand bg-neutral-800 text-neutral-50"
+					className={`${inputClass} text-neutral-950 dark:text-neutral-50`}
 					required
 				>
 					<option value="Transport">Transport / On Road Use</option>
@@ -154,7 +165,7 @@ function FooterCard() {
 					value={formData.phone}
 					onChange={handleChange}
 					placeholder="Phone"
-					className="p-3 border border-neutral-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-(--branding-700)"
+					className={inputClass}
 				/>
 
 				<input
@@ -163,7 +174,7 @@ function FooterCard() {
 					value={formData.companyName}
 					onChange={handleChange}
 					placeholder="Company Name"
-					className="p-3 border border-neutral-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-(--branding-700)"
+					className={inputClass}
 				/>
 
 				<input
@@ -172,12 +183,12 @@ function FooterCard() {
 					value={formData.referral}
 					onChange={handleChange}
 					placeholder="How did you hear about us?"
-					className="p-3 border border-neutral-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-(--branding-700)"
+					className={inputClass}
 				/>
 
 				<button
 					type="submit"
-					className="bg-neutral-900 text-neutral-50 py-3 rounded-lg hover:bg-neutral-950 transition-colors duration-200 font-bold"
+					className="bg-(--branding-700) text-neutral-50 py-3 rounded-lg hover:bg-(--branding-800) transition-colors duration-200 font-bold"
 				>
 					Submit
 				</button>

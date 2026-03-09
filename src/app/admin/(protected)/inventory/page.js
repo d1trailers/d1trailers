@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Card from "@/components/ui/Card";
 import StateCard from "@/components/admin/StateCard";
 import StatusBadge from "@/components/admin/StatusBadge";
+import { LoadingCardGrid, LoadingPanel } from "@/components/ui/LoadingSkeleton";
 
 const STATUS_ORDER = ["Available", "Reserved", "Rented", "Maintenance"];
 
@@ -58,10 +59,13 @@ export default function AdminInventoryPage() {
 
 	if (loading) {
 		return (
-			<StateCard
-				title="Loading Inventory"
-				message="Fetching trailer inventory by status."
-			/>
+			<div className="space-y-4">
+				<LoadingPanel
+					title="Loading Inventory"
+					subtitle="Fetching trailer inventory by status."
+				/>
+				<LoadingCardGrid count={4} />
+			</div>
 		);
 	}
 
@@ -87,7 +91,7 @@ export default function AdminInventoryPage() {
 				return (
 					<Card
 						key={status}
-						className="bg-neutral-200 dark:bg-neutral-800 shadow-sm"
+						className="motion-enter-delayed"
 					>
 						<div className="flex items-center justify-between">
 							<h2 className="font-syne text-xl font-bold text-neutral-950 dark:text-neutral-50">
@@ -102,7 +106,7 @@ export default function AdminInventoryPage() {
 								{trailers.map((trailer) => (
 									<div
 										key={trailer.trailerId}
-										className="rounded-lg bg-neutral-100 dark:bg-neutral-700 p-3 flex flex-wrap items-center justify-between gap-3"
+										className="surface-subtle rounded-lg p-3 flex flex-wrap items-center justify-between gap-3"
 									>
 										<div>
 											<p className="font-semibold text-neutral-950 dark:text-neutral-50">

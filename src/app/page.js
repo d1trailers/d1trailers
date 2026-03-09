@@ -3,150 +3,211 @@
 import Section from "@/components/structure/Section";
 import Card from "@/components/ui/Card";
 import Image from "next/image";
+import Link from "next/link";
 import { XMarkIcon } from "@heroicons/react/20/solid";
 import { useState } from "react";
 
+const FAQS = [
+	{
+		title: "What are the requirements to rent?",
+		answers: [
+			"To rent a dry van from D1Trailers, you need property damage insurance to cover potential loss or theft. A refundable deposit is also required and returned if equipment is in good condition at return.",
+			"There is a minimum rental period of 3 months so operators have enough time to run consistently with the unit.",
+		],
+	},
+	{
+		title: "What does the rental agreement include?",
+		answers: [
+			"Our rental agreement includes trailers with DOT-ready tires and brakes for safe operation.",
+			"During the rental term, you are responsible for maintenance. If our team must handle a repair, the cost is passed through to your account.",
+		],
+	},
+	{
+		title: "How quickly can I rent a trailer?",
+		answers: [
+			"Most qualified applications can be processed within 48 hours. After review and approval, we coordinate pickup and onboarding.",
+		],
+	},
+	{
+		title: "What payment methods are accepted?",
+		answers: [
+			"We support card-based billing and recurring monthly payments through our billing system.",
+		],
+	},
+	{
+		title: "Do you offer long-term discounts?",
+		answers: [
+			"Pricing is fixed and transparent. Contact us directly if you have a larger fleet need and want to discuss availability planning.",
+		],
+	},
+	{
+		title: "What if I have an issue with the trailer?",
+		answers: [
+			"Contact support immediately. We will guide your next step and keep you informed until the issue is resolved.",
+		],
+	},
+];
+
+const EXPECTATION_PILLARS = [
+	{
+		title: "Straightforward Onboarding",
+		description:
+			"Applications are manually reviewed and most qualified submissions can be completed within 48 hours.",
+	},
+	{
+		title: "Operationally Ready Equipment",
+		description:
+			"Dry vans are delivered with inspection-focused standards so teams can deploy quickly and confidently.",
+	},
+	{
+		title: "Predictable Monthly Billing",
+		description:
+			"Billing terms are fixed, visible, and managed through a clear customer portal workflow.",
+	},
+	{
+		title: "Built for Consistent Operations",
+		description:
+			"Every part of the rental lifecycle is structured to keep expectations clear for both sides: application, approval, assignment, and recurring service.",
+	},
+];
+
+const ABOUT_US_POINTS = [
+	"D1Trailers is focused on dependable dry van rentals for owner-operators and small fleets.",
+	"We keep rental operations practical: clear terms, consistent equipment standards, and direct communication from application through active support.",
+	"Our goal is long-term working relationships built on predictable service and straightforward billing expectations.",
+];
+
 export default function Home() {
 	return (
-		<div className="grid grid-flow-row h-full gap-7">
-			<section className="relative w-full h-[50vh] md:h-[65vh] lg:h-[75vh]">
+		<div className="grid grid-flow-row h-full gap-10 pb-10">
+			<section className="motion-enter relative mt-24 md:mt-28 w-full h-[58vh] md:h-[70vh] lg:h-[78vh] overflow-hidden">
 				<Image
 					src="/banner-alternate.png"
-					alt="Banner photo"
+					alt="D1Trailers fleet"
 					fill
 					className="object-cover"
 					style={{
-						WebkitMaskImage:
-							"linear-gradient(to bottom, white 70%, transparent 100%)",
-						maskImage:
-							"linear-gradient(to bottom, white 70%, transparent 100%)",
-						filter: "brightness(0.80) contrast(1.2)",
+						filter: "brightness(0.72) contrast(1.08)",
 					}}
 					priority
 				/>
-				<div className="flex flex-col absolute top-1/2 w-full px-5 md:px-15 lg:px-25 text-neutral-50">
-					<h1
-						className="w-full text-center scale-y-85 font-extrabold font-syne text-3xl md:text-7xl lg:text-9xl"
-						style={{
-							textShadow: `
-                0 1px 0 var(--branding-700),
-                0 2px 0 var(--branding-700),
-                0 3px 0 var(--branding-700),
-                0 4px 0 var(--branding-700),
-                0 5px 0 var(--branding-700)
-              `,
-						}}
-					>
-						D1TRAILERS
-					</h1>
-					<h2 className="w-full text-center font-sarina text-md md:text-lg lg:text-2xl ">
-						Affordable Dry Van Rentals
-					</h2>
+				<div className="absolute inset-0 bg-gradient-to-b from-black/30 via-black/35 to-transparent" />
+				<div className="absolute inset-0 flex flex-col justify-center px-5 md:px-15 lg:px-25 text-neutral-50">
+					<div className="motion-enter-delayed max-w-8xl space-y-5">
+						<p className="inline-flex items-center rounded-full border border-neutral-100/40 bg-neutral-900/30 px-4 py-1 text-xs uppercase tracking-[0.18em]">
+							Dry Van Rentals
+						</p>
+						<h1 className="font-syne text-lg md:text-6xl lg:text-8xl font-extrabold leading-[0.95]">
+							Dependable Trailers.
+							<br />
+							Clear Terms.
+						</h1>
+						<p className="max-w-2xl text-sm md:text-base lg:text-lg text-neutral-100/90">
+							D1Trailers keeps rental operations simple: fixed pricing, reliable
+							equipment, and straightforward support for owner-operators and
+							small fleets.
+						</p>
+						<div className="flex flex-wrap gap-3">
+							<Link
+								href="/apply"
+								className="rounded-xl bg-(--branding-600) px-5 py-3 font-semibold text-neutral-50 no-underline hover:no-underline hover:bg-(--branding-700) transition-colors"
+							>
+								Start Application
+							</Link>
+							<Link
+								href="/login"
+								className="rounded-xl border border-neutral-50/40 bg-neutral-900/25 px-5 py-3 font-semibold text-neutral-50 no-underline hover:no-underline hover:bg-neutral-900/40 transition-colors"
+							>
+								Client Portal
+							</Link>
+						</div>
+					</div>
 				</div>
 			</section>
-			<Section>
-				<h3 className="font-syne font-bold text-lg md:text-2x1 lg:text-3xl">
-					OUR SERVICES
-				</h3>
-				<p>
-					We lease a variety of dry vans for storage and transportation. Our
-					trailers are designed for safety, efficiency, and reliability, whether
-					you’re transporting goods locally or across the country. Each trailer
-					is meticulously maintained to ensure optimal performance and
-					compliance with all safety regulations.
-				</p>
-				<p>
-					We offer flexible rental terms to fit your schedule, competitive
-					pricing, and personalized customer support, so you can focus on your
-					business while we take care of your transportation needs. From small
-					shipments to large-scale logistics,{" "}
-					<span className="font-syne font-bold">D1Trailers</span> is your
-					trusted partner for secure and dependable trailer leasing.
-				</p>
-				<div className="flex flex-col gap-4 md:gap-6 mt-4">
-					<ServiceCard
-						key="53' Dry Vans"
-						name="53' Dry Vans"
-						cost="Inquire For Pricing"
-						imageSrc="/Trailer.png"
-						info="Perfect for long-distance transport and storage. The 53' dry van is the most common truckload trailer on the road. Dry van trailers are fully enclosed boxes designed to transport a wide range of freight safely and securely."
-					/>
+
+			<Section className="gap-6">
+				<div className="flex items-end justify-between gap-3">
+					<h2 className="font-syne text-2xl md:text-4xl font-bold">
+						What You Can Expect
+					</h2>
+					<p className="text-sm hidden lg:block text-neutral-600 dark:text-neutral-400">
+						Clear process from application to deployment
+					</p>
+				</div>
+				<div className="grid grid-cols-1 xl:grid-cols-[1.4fr_1fr] gap-5">
+					<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+						{EXPECTATION_PILLARS.map((pillar) => (
+							<Card key={pillar.title} className="surface-panel p-5 gap-3">
+								<h3 className="font-syne text-xl font-bold">{pillar.title}</h3>
+								<p className="text-sm text-neutral-700 dark:text-neutral-300 leading-relaxed">
+									{pillar.description}
+								</p>
+							</Card>
+						))}
+					</div>
+					<Card className="surface-subtle p-6">
+						<h3 className="font-syne text-2xl font-bold">About Us</h3>
+						<div className="space-y-3">
+							{ABOUT_US_POINTS.map((item) => (
+								<p
+									key={item}
+									className="text-neutral-800 dark:text-neutral-200 leading-relaxed"
+								>
+									{item}
+								</p>
+							))}
+						</div>
+					</Card>
 				</div>
 			</Section>
-			<Section>
-				<h3 className="font-syne font-bold text-lg md:text-2x1 lg:text-3xl">
-					FREQUENTLY ASKED QUESTIONS
+
+			<Section className="gap-6">
+				<div className="flex items-end justify-between gap-3">
+					<h3 className="font-syne text-xl md:text-3xl font-bold">
+						Trailers We Offer
+					</h3>
+					<p className="text-sm hidden lg:block text-neutral-600 dark:text-neutral-400">
+						Current rental lineup
+					</p>
+				</div>
+				<div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+					<ServiceCard
+						name="53' Dry Vans"
+						cost="Inquire for pricing"
+						imageSrc="/Trailer.png"
+						info="Dry van trailers are enclosed and road-proven for secure transport and storage. We prioritize reliability, clean handoff, and straightforward terms."
+					/>
+					<Card className="surface-subtle">
+						<h4 className="font-syne text-2xl font-bold">About Our Lineup</h4>
+						<p className="text-sm text-neutral-700 dark:text-neutral-300 leading-relaxed">
+							Our current fleet is centered on our{" "}
+							<span className="font-semibold">53' dry vans</span> for teams that
+							need secure enclosed capacity and consistent availability for our
+							customers.
+						</p>
+						<ul className="text-sm space-y-2 text-neutral-700 list-disc list-inside dark:text-neutral-300">
+							<li>General freight and logistics operations</li>
+							<li>Storage, staging, and overflow yard use</li>
+							<li>Regional and long-haul deployment</li>
+						</ul>
+					</Card>
+				</div>
+			</Section>
+
+			<Section className="gap-6">
+				<h3 className="font-syne text-xl md:text-3xl font-bold">
+					Frequently Asked Questions
 				</h3>
-				<div className="flex flex-col gap-5">
-					<QuestionCard title="What are the requirements to rent?">
-						<div className="flex flex-col gap-5 justify-start text-left">
-							<p>
-								To rent a dry van from{" "}
-								<span className="font-syne font-bold">D1Trailers</span>, you
-								need property damage insurance to cover any potential loss or
-								theft. A fully refundable deposit is also required, which will
-								be returned if the equipment is in good condition upon return.
-							</p>
-							<p>
-								Additionally, there is a minimum rental period of 3 months to
-								ensure you have ample time to use the trailer effectively. These
-								steps help us provide a reliable and secure service for all our
-								clients.
-							</p>
-						</div>
-					</QuestionCard>
-					<QuestionCard title="What does the rental agreement include?">
-						<div className="flex flex-col gap-5 justify-start text-left">
-							<p>
-								Our rental agreement includes trailers with DOT-ready tires and
-								brakes for safety and compliance. During the rental period, you
-								are responsible for maintaining the trailer, including any
-								repairs or maintenance.
-							</p>
-							<p>
-								If you encounter an issue you can't fix, our team will handle
-								it, and the cost will be passed on to you. This way, you can
-								focus on your needs while we ensure your rental remains
-								functional and safe.
-							</p>
-						</div>
-					</QuestionCard>
-					<QuestionCard title="How quickly can I rent a trailer, and what is the process?">
-						<div className="flex flex-col gap-5 justify-start text-left">
-							<p>
-								You can rent a trailer from{" "}
-								<span className="font-syne font-bold">D1Trailers</span> within
-								48 hours! Simply complete an application, and our compliance
-								team will review it promptly. Once approved, we'll contact you
-								to arrange a convenient time to meet and secure your unit. Our
-								streamlined process ensures a quick and hassle-free experience.
-							</p>
-						</div>
-					</QuestionCard>
-					<QuestionCard title="What payment methods are accepted?">
-						<div className="flex flex-col gap-5 justify-start text-left">
-							<p>
-								We accept credit card, cash, and Apple Pay for your convenience.
-							</p>
-						</div>
-					</QuestionCard>{" "}
-					<QuestionCard title="Do you offer any discounts for long-term rentals?">
-						<div className="flex flex-col gap-5 justify-start text-left">
-							<p>
-								Yes, we offer competitive discounts for long-term rentals.
-								Please contact our supprot team for morre details.
-							</p>
-						</div>
-					</QuestionCard>
-					<QuestionCard title="What should I do if I encounter an issue with the trailer?">
-						<div className="flex flex-col gap-5 justify-start text-left">
-							<p>
-								If you encounter any issues with the trailer durring the rental
-								period, please contact our support team immediately. We will
-								assist you in resolving ther problem as quickly as possible.
-							</p>
-						</div>
-					</QuestionCard>
+				<div className="flex flex-col gap-4">
+					{FAQS.map((faq) => (
+						<QuestionCard key={faq.title} title={faq.title}>
+							<div className="flex flex-col gap-4">
+								{faq.answers.map((answer, index) => (
+									<p key={`${faq.title}-${index}`}>{answer}</p>
+								))}
+							</div>
+						</QuestionCard>
+					))}
 				</div>
 			</Section>
 		</div>
@@ -158,27 +219,25 @@ function QuestionCard({ title, children }) {
 
 	return (
 		<button
-			onClick={() => setExpanded(!expanded)}
-			className="group bg-neutral-50 dark:bg-neutral-700 dark:hover:bg-neutral-800 hover:bg-neutral-100 ease-in-out shadow-sm p-5 rounded-2xl hover:shadow-md transition-[shadow_colors] duration-300 w-full text-left"
+			onClick={() => setExpanded((value) => !value)}
+			className="surface-panel w-full rounded-2xl p-5 text-left transition-[background-color,border-color] hover:bg-neutral-100/65 dark:hover:bg-neutral-800/60"
 		>
-			<div
-				className="w-full flex flex-row justify-between items-start border-b-4 pb-4 gap-5"
-				style={{ borderColor: "var(--branding-600)" }}
-			>
-				<h4 className="flex-1 uppercase font-semibold">{title}</h4>
-				<div className="shrink-0 flex items-center">
-					<XMarkIcon
-						className={`w-6 h-6 transform transition-transform duration-300 origin-center ${
-							expanded ? "rotate-0" : "rotate-45"
-						}`}
-					/>
-				</div>
+			<div className="flex justify-between items-start gap-4 border-b border-(--border-soft) pb-4">
+				<h4 className="font-semibold uppercase text-sm md:text-base">
+					{title}
+				</h4>
+				<XMarkIcon
+					className={`w-5 h-5 transition-transform duration-300 ${
+						expanded ? "rotate-0" : "rotate-45"
+					}`}
+				/>
 			</div>
 			<div
-				className={`w-full overflow-hidden transition-[height_opacity_margin] duration-300 ease-in-out text-neutral-300
-    ${expanded ? "max-h-screen opacity-100 mt-5" : "max-h-0 opacity-0 mt-0 "}`}
+				className={`overflow-hidden transition-[max-height,opacity,margin] duration-300 ease-in-out ${
+					expanded ? "max-h-screen opacity-100 mt-4" : "max-h-0 opacity-0 mt-0"
+				}`}
 			>
-				<div className="text-neutral-600 dark:text-neutral-400 leading-snug flex flex-col text-balance gap-2 mt-2 bg-neutral-50 dark:bg-neutral-800 group-hover:dark:bg-neutral-900 p-3 rounded-lg shadow-inner transition-colors duration-300">
+				<div className="surface-subtle rounded-lg p-4 text-neutral-700 dark:text-neutral-300 leading-relaxed">
 					{children}
 				</div>
 			</div>
@@ -188,36 +247,24 @@ function QuestionCard({ title, children }) {
 
 function ServiceCard({ name, cost, imageSrc, info }) {
 	return (
-		<Card className="group bg-neutral-50 dark:bg-neutral-700 p-4 md:p-6 rounded-2xl shadow-sm flex flex-col gap-4 hover:shadow-md hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-[shadow_colors] duration-300">
-			<div
-				className="flex items-center gap-4 md:gap-6 border-b-4 pb-4"
-				style={{ borderColor: "var(--branding-600)" }}
-			>
-				<div className="relative w-12 h-12 rounded-full overflow-hidden bg-(--branding-300) shadow-inner">
+		<Card className="surface-panel p-6 gap-5">
+			<div className="flex items-center gap-4 border-b border-(--border-soft) pb-4">
+				<div className="relative w-12 h-12 rounded-full overflow-hidden bg-(--branding-300)/35 shadow-inner">
 					<Image
 						src={imageSrc}
-						alt={`${name} Image`}
+						alt={`${name} icon`}
 						fill
 						className="object-contain p-1"
-						priority
 					/>
 				</div>
-				<h4 className="text-lg md:text-2xl font-bold uppercase font-syne text-foreground">
-					{name}
-				</h4>
+				<h4 className="font-syne text-2xl font-bold uppercase">{name}</h4>
 			</div>
-			<div className="flex flex-col gap-2 mt-2 bg-neutral-50 dark:bg-neutral-800 group-hover:dark:bg-neutral-900 p-3 rounded-lg shadow-inner transition-colors duration-300">
-				{cost && (
-					<span className="text-neutral-800 dark:text-neutral-100 font-semibold">
-						{cost}
-					</span>
-				)}
-				{info && (
-					<p className=" text-balance text-neutral-600 dark:text-neutral-400 leading-snug">
-						{info}
-					</p>
-				)}
-			</div>
+			<p className="text-sm font-semibold dark:text-neutral-50 light:text-(--branding-700)">
+				{cost}
+			</p>
+			<p className="text-neutral-700 dark:text-neutral-300 leading-relaxed">
+				{info}
+			</p>
 		</Card>
 	);
 }

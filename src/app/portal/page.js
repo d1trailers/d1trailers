@@ -3,6 +3,12 @@
 import { useEffect, useState } from "react";
 import Card from "@/components/ui/Card";
 import Link from "next/link";
+import {
+	LoadingCardGrid,
+	LoadingPanel,
+	SkeletonBlock,
+	SkeletonLine,
+} from "@/components/ui/LoadingSkeleton";
 
 function formatDate(value) {
 	if (!value) return "-";
@@ -63,13 +69,16 @@ export default function Portal() {
 
 	if (loading) {
 		return (
-			<div className="flex min-h-screen w-full items-center justify-center p-5">
-				<Card className="w-full max-w-lg bg-neutral-200 dark:bg-neutral-800 shadow-sm p-8">
-					<h2 className="text-2xl font-bold text-center">Loading Portal</h2>
-					<p className="text-sm text-neutral-600 dark:text-neutral-400 text-center">
-						Fetching your rental data.
-					</p>
-				</Card>
+			<div className="w-full min-h-screen mt-25 p-5 md:px-12 lg:px-20 pb-12 space-y-5 motion-enter">
+				<LoadingPanel
+					title="Loading portal data"
+					subtitle="Preparing account, billing, and document details."
+				/>
+				<div className="surface-panel rounded-2xl p-5 space-y-3">
+					<SkeletonLine className="w-40 h-6" />
+					<SkeletonBlock className="w-full h-28" />
+				</div>
+				<LoadingCardGrid count={3} />
 			</div>
 		);
 	}
@@ -95,18 +104,18 @@ export default function Portal() {
 	const billingRental = activeRentals[0] ?? rentals[0] ?? null;
 
 	return (
-		<div className="grid grid-flow-row w-full h-full gap-7 mt-25 p-5 md:px-35 lg:px-65">
-			<section className="flex flex-col gap-3">
+		<div className="grid grid-flow-row w-full h-full gap-7 mt-25 p-5 md:px-12 lg:px-20 pb-12 motion-enter">
+			<section className="surface-panel rounded-2xl p-5 md:p-6 flex flex-col gap-3">
 				<p className="text-neutral-600 dark:text-neutral-400">Welcome,</p>
 				<h3 className="font-syne font-bold text-3xl md:text-4xl lg:text-5xl text-neutral-950 dark:text-neutral-50">
 					{customer.companyName || "Customer"}
 				</h3>
-				<div className="inline-flex gap-2 items-center w-fit bg-neutral-300 dark:bg-neutral-700 text-neutral-950 dark:text-neutral-50 font-semibold text-sm px-4 py-2 rounded-full border-2 border-neutral-400 dark:border-neutral-600 shadow-sm">
+				<div className="inline-flex gap-2 items-center w-fit surface-subtle text-neutral-950 dark:text-neutral-50 font-semibold text-sm px-4 py-2 rounded-full">
 					<span>{activeRentals.length} Active Rentals</span>
 				</div>
 			</section>
 
-			<Card className="bg-neutral-200 dark:bg-neutral-800 p-5 flex flex-wrap gap-5 justify-between">
+			<Card className="p-5 flex flex-wrap gap-5 justify-between">
 				<Info label="Account" value={customer.companyName} />
 				<Info label="Primary Email" value={customer.primaryEmail} />
 				<Info label="Status" value={customer.status} />
@@ -117,7 +126,7 @@ export default function Portal() {
 					Billing Overview
 				</h4>
 				{billingRental ? (
-					<Card className="bg-neutral-100 dark:bg-neutral-700 shadow-sm p-6">
+					<Card className="surface-subtle p-6">
 						<Row label="Billing Status" value={billingRental.billingStatus} />
 						<Row
 							label="Billing Frequency"
@@ -134,7 +143,7 @@ export default function Portal() {
 						/>
 					</Card>
 				) : (
-					<Card className="bg-neutral-100 dark:bg-neutral-700 shadow-sm p-6">
+					<Card className="surface-subtle p-6">
 						<p className="text-neutral-600 dark:text-neutral-400">
 							No billing data is currently available.
 						</p>
@@ -153,7 +162,7 @@ export default function Portal() {
 						))}
 					</div>
 				) : (
-					<Card className="bg-neutral-100 dark:bg-neutral-700 shadow-sm p-6">
+					<Card className="surface-subtle p-6">
 						<p className="text-neutral-600 dark:text-neutral-400">
 							No rentals to display.
 						</p>
@@ -175,7 +184,7 @@ export default function Portal() {
 						))}
 					</div>
 				) : (
-					<Card className="bg-neutral-100 dark:bg-neutral-700 shadow-sm p-6">
+					<Card className="surface-subtle p-6">
 						<p className="text-neutral-600 dark:text-neutral-400">
 							No customer-level documents to display.
 						</p>
@@ -214,7 +223,7 @@ function RentalCard({ rental }) {
 	const documents = Array.isArray(rental?.documents) ? rental.documents : [];
 
 	return (
-		<Card className="w-full max-w-xl bg-neutral-200 dark:bg-neutral-800 shadow-sm p-5 gap-5">
+		<Card className="w-full max-w-xl p-5 gap-5">
 			<div className="flex items-center justify-between gap-4">
 				<h3 className="text-lg font-semibold text-neutral-950 dark:text-neutral-50 truncate">
 					{rental?.id || "Rental"}
@@ -280,7 +289,7 @@ function RentalCard({ rental }) {
 						{assignments.map((assignment, index) => (
 							<li
 								key={assignment.id ?? `assignment-${index}`}
-								className="rounded-lg bg-neutral-100 dark:bg-neutral-700 p-3"
+								className="surface-subtle rounded-lg p-3"
 							>
 								<div className="font-semibold text-neutral-900 dark:text-neutral-100">
 									{formatDate(assignment.startDate)} to{" "}
@@ -340,9 +349,7 @@ function DocumentCard({ document, compact = false }) {
 	const primaryAttachment = attachments[0];
 
 	return (
-		<Card
-			className={`w-full ${compact ? "max-w-none" : "max-w-lg"} bg-neutral-200 dark:bg-neutral-700 shadow-sm p-5 gap-4`}
-		>
+		<Card className={`w-full ${compact ? "max-w-none" : "max-w-lg"} p-5 gap-4`}>
 			<h3 className="text-lg font-semibold text-neutral-950 dark:text-neutral-50 truncate">
 				{document?.type || "Document"}
 			</h3>

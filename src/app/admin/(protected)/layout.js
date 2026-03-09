@@ -13,7 +13,7 @@ export default async function AdminProtectedLayout({ children }) {
 	const email = verifyAdminSessionToken(sessionToken);
 
 	if (!email || !isAdminEmailAllowlisted(email)) {
-		redirect("/admin/login");
+		redirect("/login");
 	}
 
 	return <AdminShell adminEmail={email}>{children}</AdminShell>;

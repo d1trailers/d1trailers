@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import MetricCard from "@/components/admin/MetricCard";
 import StateCard from "@/components/admin/StateCard";
 import Card from "@/components/ui/Card";
+import { LoadingCardGrid, LoadingPanel } from "@/components/ui/LoadingSkeleton";
 
 export default function AdminOverviewPage() {
 	const [data, setData] = useState(null);
@@ -42,10 +43,13 @@ export default function AdminOverviewPage() {
 
 	if (loading) {
 		return (
-			<StateCard
-				title="Loading Overview"
-				message="Fetching admin summary metrics."
-			/>
+			<div className="space-y-4">
+				<LoadingPanel
+					title="Loading Overview"
+					subtitle="Fetching admin summary metrics."
+				/>
+				<LoadingCardGrid count={6} />
+			</div>
 		);
 	}
 
@@ -79,7 +83,7 @@ export default function AdminOverviewPage() {
 				/>
 			</div>
 
-			<Card className="bg-neutral-200 dark:bg-neutral-800 shadow-sm">
+			<Card>
 				<h2 className="font-syne text-xl font-bold text-neutral-950 dark:text-neutral-50">
 					Trailer Status Snapshot
 				</h2>
@@ -87,7 +91,7 @@ export default function AdminOverviewPage() {
 					{Object.entries(trailersByStatus).map(([status, count]) => (
 						<div
 							key={status}
-							className="rounded-lg bg-neutral-100 dark:bg-neutral-700 p-3"
+							className="surface-subtle rounded-lg p-3"
 						>
 							<p className="text-xs text-neutral-600 dark:text-neutral-400">
 								{status}

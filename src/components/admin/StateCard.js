@@ -7,7 +7,7 @@ export default function StateCard({ title, message, tone = "neutral" }) {
 			: "text-neutral-700 dark:text-neutral-300";
 
 	return (
-		<Card className="bg-neutral-200 dark:bg-neutral-800 shadow-sm">
+		<Card className="p-6">
 			<h3 className="text-lg font-semibold text-neutral-950 dark:text-neutral-50">
 				{title}
 			</h3>

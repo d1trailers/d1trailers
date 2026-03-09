@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Card from "@/components/ui/Card";
 import StateCard from "@/components/admin/StateCard";
 import StatusBadge from "@/components/admin/StatusBadge";
+import { LoadingCardGrid, LoadingPanel } from "@/components/ui/LoadingSkeleton";
 
 function formatDate(value) {
 	if (!value) return "-";
@@ -53,10 +54,13 @@ export default function AdminApplicationsPage() {
 
 	if (loading) {
 		return (
-			<StateCard
-				title="Loading Applications"
-				message="Fetching the application review queue."
-			/>
+			<div className="space-y-4">
+				<LoadingPanel
+					title="Loading Applications"
+					subtitle="Fetching the application review queue."
+				/>
+				<LoadingCardGrid count={4} />
+			</div>
 		);
 	}
 
@@ -84,7 +88,7 @@ export default function AdminApplicationsPage() {
 			{data.map((application) => (
 				<Card
 					key={application.customerId}
-					className="bg-neutral-200 dark:bg-neutral-800 shadow-sm"
+					className="motion-enter-delayed"
 				>
 					<div className="flex flex-wrap items-center justify-between gap-3">
 						<div>

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Card from "@/components/ui/Card";
 import StateCard from "@/components/admin/StateCard";
 import StatusBadge from "@/components/admin/StatusBadge";
+import { LoadingCardGrid, LoadingPanel } from "@/components/ui/LoadingSkeleton";
 
 function formatDate(value) {
 	if (!value) return "-";
@@ -60,10 +61,13 @@ export default function AdminRentalsPage() {
 
 	if (loading) {
 		return (
-			<StateCard
-				title="Loading Active Rentals"
-				message="Fetching active and pending rental records."
-			/>
+			<div className="space-y-4">
+				<LoadingPanel
+					title="Loading Active Rentals"
+					subtitle="Fetching active and pending rental records."
+				/>
+				<LoadingCardGrid count={4} />
+			</div>
 		);
 	}
 
@@ -87,7 +91,7 @@ export default function AdminRentalsPage() {
 			{data.map((rental) => (
 				<Card
 					key={rental.rentalId}
-					className="bg-neutral-200 dark:bg-neutral-800 shadow-sm"
+					className="motion-enter-delayed"
 				>
 					<div className="flex flex-wrap justify-between gap-3 items-start">
 						<div>
