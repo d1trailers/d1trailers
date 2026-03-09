@@ -91,21 +91,21 @@ export default function Home() {
 					}}
 					priority
 				/>
-				<div className="absolute inset-0 bg-gradient-to-b from-black/30 via-black/35 to-transparent" />
+				<div className="absolute inset-0 bg-linear-to-b from-black/30 via-black/35 to-transparent" />
 				<div className="absolute inset-0 flex flex-col justify-center px-5 md:px-15 lg:px-25 text-neutral-50">
 					<div className="motion-enter-delayed max-w-8xl space-y-5">
 						<p className="inline-flex items-center rounded-full border border-neutral-100/40 bg-neutral-900/30 px-4 py-1 text-xs uppercase tracking-[0.18em]">
-							Dry Van Rentals
+							Trailer Rentals
 						</p>
-						<h1 className="font-syne text-lg md:text-6xl lg:text-8xl font-extrabold leading-[0.95]">
+						<h1 className="uppercase text-lg md:text-6xl lg:text-8xl font-extrabold leading-[0.95]">
 							Dependable Trailers.
 							<br />
 							Clear Terms.
 						</h1>
 						<p className="max-w-2xl text-sm md:text-base lg:text-lg text-neutral-100/90">
-							D1Trailers keeps rental operations simple: fixed pricing, reliable
-							equipment, and straightforward support for owner-operators and
-							small fleets.
+							<span className="font-syne font-bold">D1Trailers</span> keeps
+							rental operations simple: fixed pricing, reliable equipment, and
+							straightforward support for owner-operators and small fleets.
 						</p>
 						<div className="flex flex-wrap gap-3">
 							<Link
