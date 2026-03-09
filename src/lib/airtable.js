@@ -18,6 +18,10 @@ const AIRTABLE_SCHEMA = {
 			STATUS: "Status",
 			STRIPE_CUSTOMER_ID: "Stripe Customer ID",
 			RENTALS: "Rentals",
+			DECISION_BY: "Decision By",
+			REVIEW_NOTES: "Review Notes",
+			REVIEWED_AT: "Reviewed At",
+			SUBMITTED_AT: "Submitted At",
 			DOCUMENTS: "Documents",
 		},
 		RENTALS: {
@@ -118,6 +122,16 @@ function formulaOrFindInLinkedField(recordIds, linkedFieldName) {
 	return conditions.length === 1 ? conditions[0] : `OR(${conditions.join(",")})`;
 }
 
+function formulaOrFromStatuses(fieldName, statuses) {
+	const safeStatuses = Array.from(new Set((statuses ?? []).filter(Boolean)));
+	if (!safeStatuses.length) return null;
+
+	const conditions = safeStatuses.map(
+		(status) => `{${fieldName}} = '${escapeFormulaValue(status)}'`
+	);
+	return conditions.length === 1 ? conditions[0] : `OR(${conditions.join(",")})`;
+}
+
 function normalizeAttachments(value) {
 	const attachments = Array.isArray(value) ? value : [];
 	return attachments
@@ -146,6 +160,14 @@ function normalizeCustomerRecord(record) {
 		rentalRecordIds: safeLinkedIds(
 			record.get(AIRTABLE_SCHEMA.FIELDS.CUSTOMERS.RENTALS)
 		),
+		decisionBy:
+			record.get(AIRTABLE_SCHEMA.FIELDS.CUSTOMERS.DECISION_BY) ?? null,
+		reviewNotes:
+			record.get(AIRTABLE_SCHEMA.FIELDS.CUSTOMERS.REVIEW_NOTES) ?? null,
+		reviewedAt:
+			record.get(AIRTABLE_SCHEMA.FIELDS.CUSTOMERS.REVIEWED_AT) ?? null,
+		submittedAt:
+			record.get(AIRTABLE_SCHEMA.FIELDS.CUSTOMERS.SUBMITTED_AT) ?? null,
 		documentRecordIds: safeLinkedIds(
 			record.get(AIRTABLE_SCHEMA.FIELDS.CUSTOMERS.DOCUMENTS)
 		),
@@ -329,6 +351,78 @@ export async function getTrailersByIds(trailerRecordIds) {
 	return records.map(normalizeTrailerRecord);
 }
 
+export async function getCustomersByIds(customerRecordIds) {
+	assertBase();
+	const filterByFormula = formulaOrFromRecordIds(customerRecordIds);
+	if (!filterByFormula) return [];
+
+	const records = await base(AIRTABLE_SCHEMA.TABLES.CUSTOMERS)
+		.select({ filterByFormula })
+		.all();
+
+	return records.map(normalizeCustomerRecord);
+}
+
+export async function getCustomersByStatuses(statuses) {
+	assertBase();
+	const filterByFormula = formulaOrFromStatuses(
+		AIRTABLE_SCHEMA.FIELDS.CUSTOMERS.STATUS,
+		statuses
+	);
+	if (!filterByFormula) return [];
+
+	const records = await base(AIRTABLE_SCHEMA.TABLES.CUSTOMERS)
+		.select({ filterByFormula })
+		.all();
+
+	return records.map(normalizeCustomerRecord);
+}
+
+export async function getRentalsByStatuses(statuses) {
+	assertBase();
+	const filterByFormula = formulaOrFromStatuses(
+		AIRTABLE_SCHEMA.FIELDS.RENTALS.STATUS,
+		statuses
+	);
+	if (!filterByFormula) return [];
+
+	const records = await base(AIRTABLE_SCHEMA.TABLES.RENTALS)
+		.select({ filterByFormula })
+		.all();
+
+	return records.map(normalizeRentalRecord);
+}
+
+export async function getTrailersByStatuses(statuses) {
+	assertBase();
+	const filterByFormula = formulaOrFromStatuses(
+		AIRTABLE_SCHEMA.FIELDS.TRAILERS.STATUS,
+		statuses
+	);
+	if (!filterByFormula) return [];
+
+	const records = await base(AIRTABLE_SCHEMA.TABLES.TRAILERS)
+		.select({ filterByFormula })
+		.all();
+
+	return records.map(normalizeTrailerRecord);
+}
+
+export async function getAssignmentsByStatuses(statuses) {
+	assertBase();
+	const filterByFormula = formulaOrFromStatuses(
+		AIRTABLE_SCHEMA.FIELDS.ASSINGMENTS.STATUS,
+		statuses
+	);
+	if (!filterByFormula) return [];
+
+	const records = await base(AIRTABLE_SCHEMA.TABLES.ASSINGMENTS)
+		.select({ filterByFormula })
+		.all();
+
+	return records.map(normalizeAssignmentRecord);
+}
+
 export async function getCustomerDocuments(customerRecordId) {
 	assertBase();
 	if (!customerRecordId) return [];
@@ -458,6 +552,169 @@ export function buildPortalContract(
 		},
 		rentals: normalizedRentals,
 		documents: customerLevelDocuments,
+	};
+}
+
+export const ADMIN_APPLICATION_CUSTOMER_STATUSES = [
+	"Submitted",
+	"Review",
+	"Needs Info",
+	"Awaiting Payment",
+];
+export const ADMIN_ACTIVE_RENTAL_STATUSES = [
+	"Active",
+	"Awaiting First Payment",
+	"Overdue",
+];
+export const ADMIN_WATCHLIST_CUSTOMER_STATUSES = ["Past Due", "Suspended"];
+export const ADMIN_WATCHLIST_RENTAL_STATUSES = ["Overdue"];
+export const ADMIN_INVENTORY_TRAILER_STATUSES = [
+	"Available",
+	"Reserved",
+	"Rented",
+	"Maintenance",
+];
+
+function summarizeTrailersByStatus(trailers) {
+	return ADMIN_INVENTORY_TRAILER_STATUSES.reduce((acc, status) => {
+		acc[status] = trailers.filter((trailer) => trailer.status === status).length;
+		return acc;
+	}, {});
+}
+
+function enrichRentalsForAdmin(rentals, customers, trailers) {
+	const customersByRecordId = new Map(
+		customers.map((customer) => [customer.recordId, customer])
+	);
+	const trailersByRecordId = new Map(
+		trailers.map((trailer) => [trailer.recordId, trailer])
+	);
+
+	return rentals.map((rental) => {
+		const customerNames = rental.customerRecordIds
+			.map((recordId) => customersByRecordId.get(recordId)?.companyName)
+			.filter(Boolean);
+
+		const rentalTrailers = rental.trailerRecordIds
+			.map((recordId) => trailersByRecordId.get(recordId))
+			.filter(Boolean)
+			.map(publicTrailerView);
+
+		return {
+			rentalId: rental.id,
+			customerName: customerNames[0] ?? "Unknown Customer",
+			status: rental.status,
+			billingFrequency: rental.billingFrequency,
+			rate: rental.rate,
+			depositAmount: rental.depositAmount,
+			currentPeriodEnd: rental.currentPeriodEnd,
+			billingStatus: rental.billingStatus,
+			trailers: rentalTrailers,
+		};
+	});
+}
+
+export async function getAdminApplicationsData() {
+	const customers = await getCustomersByStatuses(ADMIN_APPLICATION_CUSTOMER_STATUSES);
+
+	return customers.map((customer) => ({
+		customerId: customer.id,
+		companyName: customer.companyName,
+		primaryEmail: customer.primaryEmail,
+		status: customer.status,
+		submittedAt: customer.submittedAt,
+		reviewedAt: customer.reviewedAt,
+		reviewNotes: customer.reviewNotes,
+	}));
+}
+
+export async function getAdminRentalsData(
+	statuses = ADMIN_ACTIVE_RENTAL_STATUSES
+) {
+	const rentals = await getRentalsByStatuses(statuses);
+
+	const customerRecordIds = Array.from(
+		new Set(rentals.flatMap((rental) => rental.customerRecordIds))
+	);
+	const trailerRecordIds = Array.from(
+		new Set(rentals.flatMap((rental) => rental.trailerRecordIds))
+	);
+
+	const [customers, trailers] = await Promise.all([
+		getCustomersByIds(customerRecordIds),
+		getTrailersByIds(trailerRecordIds),
+	]);
+
+	return enrichRentalsForAdmin(rentals, customers, trailers);
+}
+
+export async function getAdminWatchlistData() {
+	const [customers, rentals] = await Promise.all([
+		getCustomersByStatuses(ADMIN_WATCHLIST_CUSTOMER_STATUSES),
+		getAdminRentalsData(ADMIN_WATCHLIST_RENTAL_STATUSES),
+	]);
+
+	return {
+		customers: customers.map((customer) => ({
+			customerId: customer.id,
+			companyName: customer.companyName,
+			primaryEmail: customer.primaryEmail,
+			status: customer.status,
+			reviewedAt: customer.reviewedAt,
+		})),
+		rentals,
+	};
+}
+
+export async function getAdminInventoryData() {
+	const [trailers, activeAssignments] = await Promise.all([
+		getTrailersByStatuses(ADMIN_INVENTORY_TRAILER_STATUSES),
+		getAssignmentsByStatuses(["Active"]),
+	]);
+
+	const activeAssignmentsByTrailerRecordId = new Map();
+	for (const assignment of activeAssignments) {
+		for (const trailerRecordId of assignment.trailerRecordIds) {
+			const current = activeAssignmentsByTrailerRecordId.get(trailerRecordId) ?? 0;
+			activeAssignmentsByTrailerRecordId.set(trailerRecordId, current + 1);
+		}
+	}
+
+	return trailers.map((trailer) => ({
+		trailerId: trailer.id,
+		trailerType: trailer.trailerType,
+		plateNumber: trailer.plateNumber,
+		vin: trailer.vin,
+		status: trailer.status,
+		activeAssignmentCount:
+			activeAssignmentsByTrailerRecordId.get(trailer.recordId) ?? 0,
+	}));
+}
+
+export async function getAdminSummaryData() {
+	const [applications, rentals, watchlist, inventory] = await Promise.all([
+		getAdminApplicationsData(),
+		getAdminRentalsData(),
+		getAdminWatchlistData(),
+		getAdminInventoryData(),
+	]);
+
+	return {
+		applicationsPending: applications.length,
+		awaitingPayment: applications.filter(
+			(application) => application.status === "Awaiting Payment"
+		).length,
+		activeRentals: rentals.filter((rental) => rental.status === "Active").length,
+		overdueRentals: rentals.filter((rental) => rental.status === "Overdue").length,
+		pastDueCustomers: watchlist.customers.filter(
+			(customer) => customer.status === "Past Due"
+		).length,
+		suspendedCustomers: watchlist.customers.filter(
+			(customer) => customer.status === "Suspended"
+		).length,
+		trailersByStatus: summarizeTrailersByStatus(
+			inventory.map((trailer) => ({ status: trailer.status }))
+		),
 	};
 }
 
