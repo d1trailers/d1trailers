@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Card from "@/components/ui/Card";
+import Link from "next/link";
 
 export default function Login() {
 	const [email, setEmail] = useState("");
@@ -75,6 +76,9 @@ export default function Login() {
 				<div className="text-center text-sm font-semibold space-y-2">
 					<a className="block underline">Already have a Stripe billing link?</a>
 					<a className="block underline">Need help accessing your portal?</a>
+					<Link href="/admin/login" className="block underline">
+						Are you an admin? Use Admin Login
+					</Link>
 				</div>
 			</Card>
 		</div>
