@@ -1,6 +1,6 @@
 import jwt from "jsonwebtoken";
 import {
-	getCustomerByEmail,
+	getCustomerByPrimaryEmail,
 	isPortalEligibleCustomerStatus,
 } from "@/lib/airtable";
 
@@ -42,7 +42,7 @@ export async function POST(req) {
 	};
 
 	try {
-		const customer = await getCustomerByEmail(email);
+		const customer = await getCustomerByPrimaryEmail(email);
 		if (customer && isPortalEligibleCustomerStatus(customer.status)) {
 			const token = jwt.sign(
 				{ email, type: "magic-link" },

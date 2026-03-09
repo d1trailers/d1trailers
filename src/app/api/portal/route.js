@@ -15,19 +15,23 @@ export async function GET(req) {
 		return Response.json({ error: "Server configuration error" }, { status: 500 });
 	}
 
+	let email = null;
 	try {
 		const payload = jwt.verify(sessionToken, process.env.NEXTAUTH_SECRET);
-		const email =
+		email =
 			typeof payload === "object" && payload?.email
 				? String(payload.email).toLowerCase()
 				: null;
 		const tokenType =
 			typeof payload === "object" && payload?.type ? payload.type : null;
-
 		if (!email || tokenType !== "portal-session") {
 			return Response.json({ error: "Unauthorized" }, { status: 401 });
 		}
+	} catch {
+		return Response.json({ error: "Unauthorized" }, { status: 401 });
+	}
 
+	try {
 		const portalData = await getPortalDataByEmail(email);
 		if (!portalData?.customer) {
 			return Response.json({ error: "Unauthorized" }, { status: 401 });
@@ -38,7 +42,8 @@ export async function GET(req) {
 		}
 
 		return Response.json(portalData);
-	} catch {
-		return Response.json({ error: "Unauthorized" }, { status: 401 });
+	} catch (error) {
+		console.error("Failed to load portal data:", error);
+		return Response.json({ error: "Failed to load portal data" }, { status: 500 });
 	}
 }

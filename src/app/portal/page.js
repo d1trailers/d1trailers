@@ -91,7 +91,6 @@ export default function Portal() {
 	const customer = data.customer ?? {};
 	const rentals = Array.isArray(data.rentals) ? data.rentals : [];
 	const documents = Array.isArray(data.documents) ? data.documents : [];
-
 	const activeRentals = rentals.filter((rental) => rental?.status === "Active");
 	const billingRental = activeRentals[0] ?? rentals[0] ?? null;
 
@@ -129,6 +128,10 @@ export default function Portal() {
 							value={formatDate(billingRental.currentPeriodEnd)}
 						/>
 						<Row label="Rate" value={formatCurrency(billingRental.rate)} />
+						<Row
+							label="Deposit Amount"
+							value={formatCurrency(billingRental.depositAmount)}
+						/>
 					</Card>
 				) : (
 					<Card className="bg-neutral-100 dark:bg-neutral-700 shadow-sm p-6">
@@ -160,7 +163,7 @@ export default function Portal() {
 
 			<section className="space-y-5">
 				<h4 className="font-bold font-syne text-md md:text-lg lg:text-2xl text-neutral-950 dark:text-neutral-50">
-					Your Documents
+					Customer Documents
 				</h4>
 				{documents.length > 0 ? (
 					<div className="flex flex-wrap gap-6 justify-start items-start">
@@ -174,7 +177,7 @@ export default function Portal() {
 				) : (
 					<Card className="bg-neutral-100 dark:bg-neutral-700 shadow-sm p-6">
 						<p className="text-neutral-600 dark:text-neutral-400">
-							No documents to display.
+							No customer-level documents to display.
 						</p>
 					</Card>
 				)}
@@ -207,9 +210,11 @@ function Info({ label, value }) {
 
 function RentalCard({ rental }) {
 	const trailers = Array.isArray(rental?.trailers) ? rental.trailers : [];
+	const assignments = Array.isArray(rental?.assignments) ? rental.assignments : [];
+	const documents = Array.isArray(rental?.documents) ? rental.documents : [];
 
 	return (
-		<Card className="w-full max-w-lg bg-neutral-200 dark:bg-neutral-800 shadow-sm p-5 gap-5">
+		<Card className="w-full max-w-xl bg-neutral-200 dark:bg-neutral-800 shadow-sm p-5 gap-5">
 			<div className="flex items-center justify-between gap-4">
 				<h3 className="text-lg font-semibold text-neutral-950 dark:text-neutral-50 truncate">
 					{rental?.id || "Rental"}
@@ -221,8 +226,12 @@ function RentalCard({ rental }) {
 
 			<div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm text-neutral-600 dark:text-neutral-400">
 				<div>
-					<span className="font-semibold">Start Date: </span>
-					{formatDate(rental?.startDate)}
+					<span className="font-semibold">Contract Start: </span>
+					{formatDate(rental?.contractStartDate)}
+				</div>
+				<div>
+					<span className="font-semibold">Operational Start: </span>
+					{formatDate(rental?.operationalStartDate)}
 				</div>
 				<div>
 					<span className="font-semibold">End Date: </span>
@@ -235,6 +244,10 @@ function RentalCard({ rental }) {
 				<div>
 					<span className="font-semibold">Rate: </span>
 					{formatCurrency(rental?.rate)}
+				</div>
+				<div>
+					<span className="font-semibold">Deposit: </span>
+					{formatCurrency(rental?.depositAmount)}
 				</div>
 			</div>
 
@@ -257,21 +270,85 @@ function RentalCard({ rental }) {
 					</p>
 				)}
 			</div>
+
+			<div className="space-y-2">
+				<p className="font-semibold text-neutral-950 dark:text-neutral-50">
+					Assignment Timeline
+				</p>
+				{assignments.length > 0 ? (
+					<ul className="space-y-2 text-sm text-neutral-600 dark:text-neutral-400">
+						{assignments.map((assignment, index) => (
+							<li
+								key={assignment.id ?? `assignment-${index}`}
+								className="rounded-lg bg-neutral-100 dark:bg-neutral-700 p-3"
+							>
+								<div className="font-semibold text-neutral-900 dark:text-neutral-100">
+									{formatDate(assignment.startDate)} to{" "}
+									{formatDate(assignment.endDate)}
+								</div>
+								<div>Status: {assignment.status || "-"}</div>
+								<div>
+									Trailers:{" "}
+									{assignment.trailers?.length
+										? assignment.trailers
+												.map(
+													(trailer) =>
+														`${trailer.trailerType || "Trailer"} (${trailer.plateNumber || "No plate"})`
+												)
+												.join(", ")
+										: "-"}
+								</div>
+								{assignment.notes && <div>Notes: {assignment.notes}</div>}
+							</li>
+						))}
+					</ul>
+				) : (
+					<p className="text-sm text-neutral-600 dark:text-neutral-400">
+						No assignment timeline available.
+					</p>
+				)}
+			</div>
+
+			<div className="space-y-2">
+				<p className="font-semibold text-neutral-950 dark:text-neutral-50">
+					Rental Documents
+				</p>
+				{documents.length > 0 ? (
+					<div className="space-y-3">
+						{documents.map((document, index) => (
+							<DocumentCard
+								key={document.id ?? `rental-document-${index}`}
+								document={document}
+								compact
+							/>
+						))}
+					</div>
+				) : (
+					<p className="text-sm text-neutral-600 dark:text-neutral-400">
+						No rental-level documents.
+					</p>
+				)}
+			</div>
 		</Card>
 	);
 }
 
-function DocumentCard({ document }) {
+function DocumentCard({ document, compact = false }) {
 	const attachments = Array.isArray(document?.attachments)
 		? document.attachments
 		: [];
 	const primaryAttachment = attachments[0];
 
 	return (
-		<Card className="w-full max-w-lg bg-neutral-200 dark:bg-neutral-700 shadow-sm p-5 gap-5">
+		<Card
+			className={`w-full ${compact ? "max-w-none" : "max-w-lg"} bg-neutral-200 dark:bg-neutral-700 shadow-sm p-5 gap-4`}
+		>
 			<h3 className="text-lg font-semibold text-neutral-950 dark:text-neutral-50 truncate">
-				{document?.select || "Document"}
+				{document?.type || "Document"}
 			</h3>
+			<p className="text-sm text-neutral-600 dark:text-neutral-400">
+				Category: {document?.category || "-"}
+			</p>
 			<p className="text-sm text-neutral-600 dark:text-neutral-400">
 				Uploaded: {formatDate(document?.uploadedAt)}
 			</p>
