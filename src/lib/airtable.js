@@ -308,6 +308,25 @@ export async function getCustomerByPrimaryEmail(email) {
 	return normalizeCustomerRecord(records[0]);
 }
 
+export async function getCustomerByCustomerId(customerId) {
+	assertBase();
+	const normalizedCustomerId =
+		typeof customerId === "string" ? customerId.trim() : "";
+	if (!normalizedCustomerId) return null;
+
+	const records = await base(AIRTABLE_SCHEMA.TABLES.CUSTOMERS)
+		.select({
+			filterByFormula: `{${AIRTABLE_SCHEMA.FIELDS.CUSTOMERS.ID}} = '${escapeFormulaValue(
+				normalizedCustomerId
+			)}'`,
+			maxRecords: 1,
+		})
+		.firstPage();
+
+	if (!records.length) return null;
+	return normalizeCustomerRecord(records[0]);
+}
+
 export async function getRentalsByCustomer(customerRecordId) {
 	assertBase();
 	if (!customerRecordId) return [];
@@ -454,6 +473,18 @@ export async function getRentalDocuments(rentalRecordIds) {
 	return records.map(normalizeDocumentRecord);
 }
 
+async function updateRecordById(tableName, recordId, fields) {
+	assertBase();
+	if (!recordId) {
+		throw new ApplicationDecisionError("VALIDATION", "Record ID is required");
+	}
+
+	const sanitizedFields = sanitizeFieldsForUpdate(fields);
+	if (!Object.keys(sanitizedFields).length) return null;
+
+	return base(tableName).update(recordId, sanitizedFields);
+}
+
 export function buildPortalContract(
 	customer,
 	rentals,
@@ -574,6 +605,72 @@ export const ADMIN_INVENTORY_TRAILER_STATUSES = [
 	"Rented",
 	"Maintenance",
 ];
+const APPLICATION_REVIEW_CUSTOMER_STATUSES = new Set([
+	"Submitted",
+	"Review",
+	"Needs Info",
+	"Awaiting Payment",
+]);
+const APPLICATION_REVIEW_RENTAL_STATUSES = new Set([
+	"Submitted",
+	"Review",
+	"Needs Info",
+	"Awaiting Payment",
+	"Awaiting First Payment",
+]);
+
+const APPLICATION_DECISION_ACTIONS = {
+	APPROVE: "approve",
+	DENY: "deny",
+	REQUEST_INFO: "request_info",
+};
+
+const APPLICATION_DECISION_OUTCOME = {
+	[APPLICATION_DECISION_ACTIONS.APPROVE]: {
+		customerStatus: "Awaiting Payment",
+		rentalStatus: "Awaiting First Payment",
+	},
+	[APPLICATION_DECISION_ACTIONS.DENY]: {
+		customerStatus: "Denied",
+		rentalStatus: "Denied",
+	},
+	[APPLICATION_DECISION_ACTIONS.REQUEST_INFO]: {
+		customerStatus: "Needs Info",
+		rentalStatus: "Needs Info",
+	},
+};
+
+export class ApplicationDecisionError extends Error {
+	constructor(code, message) {
+		super(message);
+		this.name = "ApplicationDecisionError";
+		this.code = code;
+	}
+}
+
+function sanitizeFieldsForUpdate(fields) {
+	return Object.fromEntries(
+		Object.entries(fields).filter(([, value]) => value !== undefined)
+	);
+}
+
+function normalizeDateOnlyValue(value) {
+	if (typeof value !== "string" || !value.trim()) return null;
+	const trimmed = value.trim();
+	if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return null;
+	const parsed = new Date(`${trimmed}T00:00:00.000Z`);
+	if (Number.isNaN(parsed.getTime())) return null;
+	return trimmed;
+}
+
+function normalizeCurrencyValue(value) {
+	if (typeof value === "number" && Number.isFinite(value)) return value;
+	if (typeof value === "string" && value.trim()) {
+		const parsed = Number(value.trim());
+		if (Number.isFinite(parsed)) return parsed;
+	}
+	return null;
+}
 
 function summarizeTrailersByStatus(trailers) {
 	return ADMIN_INVENTORY_TRAILER_STATUSES.reduce((acc, status) => {
@@ -626,6 +723,357 @@ export async function getAdminApplicationsData() {
 		reviewedAt: customer.reviewedAt,
 		reviewNotes: customer.reviewNotes,
 	}));
+}
+
+function dedupeByRecordId(records) {
+	return Array.from(
+		new Map((Array.isArray(records) ? records : []).map((item) => [item.recordId, item]))
+			.values()
+	);
+}
+
+function groupDocumentsByRentalRecordId(documents) {
+	const documentsByRentalRecordId = new Map();
+
+	for (const document of documents) {
+		for (const rentalRecordId of document.rentalRecordIds) {
+			const existing = documentsByRentalRecordId.get(rentalRecordId) ?? [];
+			existing.push(publicDocumentView(document));
+			documentsByRentalRecordId.set(rentalRecordId, existing);
+		}
+	}
+
+	return documentsByRentalRecordId;
+}
+
+function groupAssignmentsByRentalRecordId(assignments) {
+	const assignmentsByRentalRecordId = new Map();
+
+	for (const assignment of assignments) {
+		for (const rentalRecordId of assignment.rentalRecordIds) {
+			const existing = assignmentsByRentalRecordId.get(rentalRecordId) ?? [];
+			existing.push(assignment);
+			assignmentsByRentalRecordId.set(rentalRecordId, existing);
+		}
+	}
+
+	return assignmentsByRentalRecordId;
+}
+
+function mapAdminTrailerOption(trailer) {
+	return {
+		recordId: trailer.recordId,
+		trailerId: trailer.id,
+		trailerType: trailer.trailerType,
+		plateNumber: trailer.plateNumber,
+		vin: trailer.vin,
+		status: trailer.status,
+	};
+}
+
+function selectDecisionTargetRental(rentals) {
+	const rentalList = Array.isArray(rentals) ? rentals : [];
+	if (!rentalList.length) return null;
+
+	const reviewableRental = rentalList.find((rental) =>
+		APPLICATION_REVIEW_RENTAL_STATUSES.has(rental.status)
+	);
+
+	return reviewableRental ?? rentalList[0];
+}
+
+export async function getAdminApplicationDetailsByCustomerId(customerId) {
+	const customer = await getCustomerByCustomerId(customerId);
+	if (!customer) return null;
+
+	const rentals = await getRentalsByCustomer(customer.recordId);
+	const rentalRecordIds = rentals.map((rental) => rental.recordId);
+
+	const [assignments, customerDocuments, rentalDocuments] = await Promise.all([
+		getAssignmentsByRentalIds(rentalRecordIds),
+		getCustomerDocuments(customer.recordId),
+		getRentalDocuments(rentalRecordIds),
+	]);
+
+	const allDocuments = dedupeByRecordId([...customerDocuments, ...rentalDocuments]);
+	const allAssignments = dedupeByRecordId(assignments);
+
+	const trailerRecordIds = Array.from(
+		new Set([
+			...rentals.flatMap((rental) => rental.trailerRecordIds),
+			...allAssignments.flatMap((assignment) => assignment.trailerRecordIds),
+		])
+	);
+
+	const [linkedTrailers, availableTrailers] = await Promise.all([
+		getTrailersByIds(trailerRecordIds),
+		getTrailersByStatuses(["Available"]),
+	]);
+
+	const trailersByRecordId = new Map(
+		linkedTrailers.map((trailer) => [trailer.recordId, trailer])
+	);
+	const documentsByRentalRecordId = groupDocumentsByRentalRecordId(allDocuments);
+	const assignmentsByRentalRecordId =
+		groupAssignmentsByRentalRecordId(allAssignments);
+
+	const rentalsDetailed = rentals.map((rental) => {
+		const rentalAssignments =
+			assignmentsByRentalRecordId.get(rental.recordId) ?? [];
+		const assignmentTrailerRecordIds = rentalAssignments.flatMap(
+			(assignment) => assignment.trailerRecordIds
+		);
+		const mergedTrailerRecordIds = Array.from(
+			new Set([...rental.trailerRecordIds, ...assignmentTrailerRecordIds])
+		);
+
+		const trailersDetailed = mergedTrailerRecordIds
+			.map((recordId) => trailersByRecordId.get(recordId))
+			.filter(Boolean)
+			.map(mapAdminTrailerOption);
+
+		return {
+			rentalId: rental.id,
+			recordId: rental.recordId,
+			status: rental.status,
+			billingFrequency: rental.billingFrequency,
+			rate: rental.rate,
+			depositAmount: rental.depositAmount,
+			contractStartDate: rental.contractStartDate,
+			operationalStartDate: rental.operationalStartDate,
+			endDate: rental.endDate,
+			currentPeriodEnd: rental.currentPeriodEnd,
+			billingStatus: rental.billingStatus,
+			trailers: trailersDetailed,
+			assignments: rentalAssignments.map((assignment) => ({
+				assignmentId: assignment.id,
+				startDate: assignment.startDate,
+				endDate: assignment.endDate,
+				status: assignment.status,
+				notes: assignment.notes,
+				trailers: assignment.trailerRecordIds
+					.map((recordId) => trailersByRecordId.get(recordId))
+					.filter(Boolean)
+					.map(mapAdminTrailerOption),
+			})),
+			documents: documentsByRentalRecordId.get(rental.recordId) ?? [],
+		};
+	});
+
+	return {
+		customer: {
+			customerId: customer.id,
+			recordId: customer.recordId,
+			companyName: customer.companyName,
+			primaryEmail: customer.primaryEmail,
+			status: customer.status,
+			submittedAt: customer.submittedAt,
+			reviewedAt: customer.reviewedAt,
+			reviewNotes: customer.reviewNotes,
+			decisionBy: customer.decisionBy,
+		},
+		rentals: rentalsDetailed,
+		documents: allDocuments
+			.filter((document) => document.rentalRecordIds.length === 0)
+			.map(publicDocumentView),
+		availableTrailers: availableTrailers.map(mapAdminTrailerOption),
+	};
+}
+
+export async function applyAdminApplicationDecision(customerId, decisionInput = {}) {
+	const action =
+		typeof decisionInput.action === "string"
+			? decisionInput.action.trim().toLowerCase()
+			: "";
+
+	const actionOutcome = APPLICATION_DECISION_OUTCOME[action];
+	if (!actionOutcome) {
+		throw new ApplicationDecisionError(
+			"VALIDATION",
+			"Decision action must be one of: approve, deny, request_info."
+		);
+	}
+
+	const customer = await getCustomerByCustomerId(customerId);
+	if (!customer) {
+		throw new ApplicationDecisionError("NOT_FOUND", "Application customer not found.");
+	}
+
+	if (!APPLICATION_REVIEW_CUSTOMER_STATUSES.has(customer.status)) {
+		throw new ApplicationDecisionError(
+			"CONFLICT",
+			`Customer status ${customer.status || "Unknown"} is not reviewable.`
+		);
+	}
+
+	const rentals = await getRentalsByCustomer(customer.recordId);
+	if (!rentals.length) {
+		throw new ApplicationDecisionError(
+			"CONFLICT",
+			"No rental record is linked to this application."
+		);
+	}
+
+	const reviewedAt = new Date().toISOString();
+	const reviewNotes =
+		typeof decisionInput.reviewNotes === "string"
+			? decisionInput.reviewNotes.trim()
+			: "";
+	const decisionBy =
+		typeof decisionInput.decisionBy === "string"
+			? decisionInput.decisionBy.trim()
+			: "";
+
+	const customerUpdateFields = sanitizeFieldsForUpdate({
+		[AIRTABLE_SCHEMA.FIELDS.CUSTOMERS.STATUS]: actionOutcome.customerStatus,
+		[AIRTABLE_SCHEMA.FIELDS.CUSTOMERS.REVIEWED_AT]: reviewedAt,
+		[AIRTABLE_SCHEMA.FIELDS.CUSTOMERS.REVIEW_NOTES]: reviewNotes || null,
+		[AIRTABLE_SCHEMA.FIELDS.CUSTOMERS.DECISION_BY]: decisionBy || undefined,
+	});
+
+	if (action === APPLICATION_DECISION_ACTIONS.APPROVE) {
+		const trailerRecordId =
+			typeof decisionInput.trailerRecordId === "string"
+				? decisionInput.trailerRecordId.trim()
+				: "";
+		const rate = normalizeCurrencyValue(decisionInput.rate);
+		const depositAmount = normalizeCurrencyValue(decisionInput.depositAmount);
+		const contractStartDate = normalizeDateOnlyValue(
+			decisionInput.contractStartDate
+		);
+		const operationalStartDateInput = decisionInput.operationalStartDate;
+		const operationalStartDate = normalizeDateOnlyValue(
+			operationalStartDateInput
+		);
+
+		if (!trailerRecordId) {
+			throw new ApplicationDecisionError(
+				"VALIDATION",
+				"Approval requires a selected trailer."
+			);
+		}
+
+		if (rate === null || rate < 0) {
+			throw new ApplicationDecisionError(
+				"VALIDATION",
+				"Approval requires a valid non-negative rate."
+			);
+		}
+
+		if (depositAmount === null || depositAmount < 0) {
+			throw new ApplicationDecisionError(
+				"VALIDATION",
+				"Approval requires a valid non-negative deposit amount."
+			);
+		}
+
+		if (!contractStartDate) {
+			throw new ApplicationDecisionError(
+				"VALIDATION",
+				"Approval requires a valid contract start date."
+			);
+		}
+
+		if (operationalStartDateInput && !operationalStartDate) {
+			throw new ApplicationDecisionError(
+				"VALIDATION",
+				"Operational start date must be a valid YYYY-MM-DD value."
+			);
+		}
+
+		const targetRental = selectDecisionTargetRental(rentals);
+		if (!targetRental) {
+			throw new ApplicationDecisionError(
+				"CONFLICT",
+				"No rental record is linked to this application."
+			);
+		}
+
+		if (!APPLICATION_REVIEW_RENTAL_STATUSES.has(targetRental.status)) {
+			throw new ApplicationDecisionError(
+				"CONFLICT",
+				`Rental status ${targetRental.status || "Unknown"} cannot be approved.`
+			);
+		}
+
+		const [trailer] = await getTrailersByIds([trailerRecordId]);
+		if (!trailer) {
+			throw new ApplicationDecisionError(
+				"VALIDATION",
+				"Selected trailer was not found."
+			);
+		}
+
+		if (trailer.status !== "Available") {
+			throw new ApplicationDecisionError(
+				"CONFLICT",
+				`Trailer ${trailer.id || trailer.recordId} is currently ${trailer.status || "unavailable"}.`
+			);
+		}
+
+		const rentalUpdateFields = sanitizeFieldsForUpdate({
+			[AIRTABLE_SCHEMA.FIELDS.RENTALS.STATUS]: actionOutcome.rentalStatus,
+			[AIRTABLE_SCHEMA.FIELDS.RENTALS.TRAILER]: [trailerRecordId],
+			[AIRTABLE_SCHEMA.FIELDS.RENTALS.RATE]: rate,
+			[AIRTABLE_SCHEMA.FIELDS.RENTALS.DEPOSIT_AMOUNT]: depositAmount,
+			[AIRTABLE_SCHEMA.FIELDS.RENTALS.CONTRACT_START_DATE]: contractStartDate,
+			[AIRTABLE_SCHEMA.FIELDS.RENTALS.OPERATIONAL_START_DATE]:
+				operationalStartDate || contractStartDate,
+			[AIRTABLE_SCHEMA.FIELDS.RENTALS.BILLING_FREQUENCY]:
+				targetRental.billingFrequency || "Monthly",
+		});
+
+		await updateRecordById(
+			AIRTABLE_SCHEMA.TABLES.RENTALS,
+			targetRental.recordId,
+			rentalUpdateFields
+		);
+		await updateRecordById(
+			AIRTABLE_SCHEMA.TABLES.CUSTOMERS,
+			customer.recordId,
+			customerUpdateFields
+		);
+		await updateRecordById(AIRTABLE_SCHEMA.TABLES.TRAILERS, trailerRecordId, {
+			[AIRTABLE_SCHEMA.FIELDS.TRAILERS.STATUS]: "Reserved",
+		});
+
+		return {
+			customerId: customer.id,
+			action,
+			customerStatus: actionOutcome.customerStatus,
+			rentalStatus: actionOutcome.rentalStatus,
+			rentalId: targetRental.id,
+			trailerId: trailer.id,
+			reviewedAt,
+		};
+	}
+
+	const rentalsToUpdate = rentals.filter((rental) =>
+		APPLICATION_REVIEW_RENTAL_STATUSES.has(rental.status)
+	);
+	const targetRentals = rentalsToUpdate.length ? rentalsToUpdate : rentals;
+
+	await Promise.all([
+		...targetRentals.map((rental) =>
+			updateRecordById(AIRTABLE_SCHEMA.TABLES.RENTALS, rental.recordId, {
+				[AIRTABLE_SCHEMA.FIELDS.RENTALS.STATUS]: actionOutcome.rentalStatus,
+			})
+		),
+		updateRecordById(
+			AIRTABLE_SCHEMA.TABLES.CUSTOMERS,
+			customer.recordId,
+			customerUpdateFields
+		),
+	]);
+
+	return {
+		customerId: customer.id,
+		action,
+		customerStatus: actionOutcome.customerStatus,
+		rentalStatus: actionOutcome.rentalStatus,
+		updatedRentals: targetRentals.length,
+		reviewedAt,
+	};
 }
 
 export async function getAdminRentalsData(
