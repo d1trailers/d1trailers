@@ -656,6 +656,30 @@ export const ADMIN_INVENTORY_TRAILER_STATUSES = [
 	"Rented",
 	"Maintenance",
 ];
+export const ADMIN_CUSTOMER_STATUS_OPTIONS = [
+	"Submitted",
+	"Review",
+	"Needs Info",
+	"Awaiting Payment",
+	"Active",
+	"Past Due",
+	"Suspended",
+	"Denied",
+];
+export const ADMIN_RENTAL_STATUS_OPTIONS = [
+	"Submitted",
+	"Awaiting First Payment",
+	"Active",
+	"Overdue",
+	"Returned",
+	"Cancelled ",
+];
+export const ADMIN_TRAILER_STATUS_OPTIONS = [
+	"Available",
+	"Reserved",
+	"Rented",
+	"Maintenance",
+];
 const APPLICATION_REVIEW_CUSTOMER_STATUSES = new Set([
 	"Submitted",
 	"Review",
@@ -943,6 +967,64 @@ function selectDecisionTargetRental(rentals) {
 	);
 
 	return reviewableRental ?? rentalList[0];
+}
+
+function getStatusTransitionSummary(entityType, nextStatus) {
+	if (entityType === "customer") {
+		if (nextStatus === "Denied") {
+			return {
+				risk: "high",
+				message: "This may close out the application and remove it from active review queues.",
+			};
+		}
+		if (nextStatus === "Suspended") {
+			return {
+				risk: "high",
+				message: "This can block portal access for the customer until the status is restored.",
+			};
+		}
+		if (nextStatus === "Active") {
+			return {
+				risk: "medium",
+				message: "This restores portal eligibility and treats the customer as operationally active.",
+			};
+		}
+	}
+
+	if (entityType === "rental") {
+		if (nextStatus === "Returned" || nextStatus === RENTAL_STATUS_CANCELLED) {
+			return {
+				risk: "high",
+				message: "This will expire active assignments and release reserved trailers tied to the rental.",
+			};
+		}
+		if (nextStatus === "Active") {
+			return {
+				risk: "medium",
+				message: "This marks the rental live. Reserved trailers remain linked and billing-facing status should be reviewed.",
+			};
+		}
+	}
+
+	if (entityType === "trailer") {
+		if (nextStatus === "Available") {
+			return {
+				risk: "high",
+				message: "This can release the trailer from current reservations if active assignments are expired first.",
+			};
+		}
+		if (nextStatus === "Maintenance") {
+			return {
+				risk: "high",
+				message: "This may interrupt active operational assignments and should only be used after review.",
+			};
+		}
+	}
+
+	return {
+		risk: "medium",
+		message: "Review linked records before applying this status change.",
+	};
 }
 
 export async function getAdminApplicationDetailsByCustomerId(customerId) {
@@ -1429,6 +1511,7 @@ export async function getAdminWatchlistData() {
 	return {
 		customers: customers.map((customer) => ({
 			customerId: customer.id,
+			recordId: customer.recordId,
 			companyName: customer.companyName,
 			primaryEmail: customer.primaryEmail,
 			status: customer.status,
@@ -1447,10 +1530,23 @@ export async function getAdminInventoryData() {
 	const activeRentalRecordIds = Array.from(
 		new Set(activeAssignments.flatMap((assignment) => assignment.rentalRecordIds))
 	);
-	const activeRentals = await getRentalsByIds(activeRentalRecordIds);
+	const assignmentBackedRentals = await getRentalsByIds(activeRentalRecordIds);
+	const fallbackRentals = await getRentalsByStatuses(ADMIN_ACTIVE_RENTAL_STATUSES);
+	const activeRentals = dedupeByRecordId([
+		...assignmentBackedRentals,
+		...fallbackRentals,
+	]);
 	const rentalsByRecordId = new Map(
 		activeRentals.map((rental) => [rental.recordId, rental])
 	);
+	const rentalsByTrailerRecordId = new Map();
+	for (const rental of activeRentals) {
+		for (const trailerRecordId of rental.trailerRecordIds) {
+			const current = rentalsByTrailerRecordId.get(trailerRecordId) ?? [];
+			current.push(rental);
+			rentalsByTrailerRecordId.set(trailerRecordId, current);
+		}
+	}
 
 	const activeAssignmentsByTrailerRecordId = new Map();
 	for (const assignment of activeAssignments) {
@@ -1461,15 +1557,21 @@ export async function getAdminInventoryData() {
 		}
 	}
 
-	return trailers.map((trailer) => ({
+	return trailers.map((trailer) => {
+		const assignmentCoverage =
+			activeAssignmentsByTrailerRecordId.get(trailer.recordId) ?? [];
+		const linkedRentals =
+			rentalsByTrailerRecordId.get(trailer.recordId) ?? [];
+
+		return {
 		trailerId: trailer.id,
+		recordId: trailer.recordId,
 		trailerType: trailer.trailerType,
 		plateNumber: trailer.plateNumber,
 		vin: trailer.vin,
 		status: trailer.status,
-		activeAssignmentCount:
-			(activeAssignmentsByTrailerRecordId.get(trailer.recordId) ?? []).length,
-		assignments: (activeAssignmentsByTrailerRecordId.get(trailer.recordId) ?? []).map(
+		activeAssignmentCount: assignmentCoverage.length,
+		assignments: assignmentCoverage.map(
 			(assignment) => ({
 				assignmentId: assignment.id,
 				startDate: assignment.startDate,
@@ -1480,7 +1582,15 @@ export async function getAdminInventoryData() {
 					.filter(Boolean),
 			})
 		),
-	}));
+		linkedRentals: linkedRentals.map((rental) => ({
+			rentalId: rental.id,
+			recordId: rental.recordId,
+			status: rental.status,
+			contractStartDate: rental.contractStartDate,
+			endDate: rental.endDate,
+		})),
+		};
+	});
 }
 
 export async function getAdminSummaryData() {
@@ -1508,6 +1618,221 @@ export async function getAdminSummaryData() {
 			inventory.map((trailer) => ({ status: trailer.status }))
 		),
 	};
+}
+
+async function expireAssignmentsByRentalRecordId(rentalRecordId, notes) {
+	const activeAssignments = (
+		await getAssignmentsByRentalIds([rentalRecordId])
+	).filter((assignment) => assignment.status === "Active");
+
+	for (const assignment of activeAssignments) {
+		await updateRecordById(
+			AIRTABLE_SCHEMA.TABLES.ASSINGMENTS,
+			assignment.recordId,
+			{
+				[AIRTABLE_SCHEMA.FIELDS.ASSINGMENTS.STATUS]: "Expired",
+				[AIRTABLE_SCHEMA.FIELDS.ASSINGMENTS.END_DATE]:
+					assignment.endDate || new Date().toISOString().slice(0, 10),
+				[AIRTABLE_SCHEMA.FIELDS.ASSINGMENTS.NOTES]: notes || assignment.notes || undefined,
+			}
+		);
+	}
+
+	for (const trailerRecordId of Array.from(
+		new Set(activeAssignments.flatMap((assignment) => assignment.trailerRecordIds))
+	)) {
+		await syncTrailerStatusForAvailability(trailerRecordId);
+	}
+
+	return activeAssignments.length;
+}
+
+async function expireAssignmentsByTrailerRecordId(trailerRecordId, notes) {
+	const activeAssignments = await getAssignmentsByTrailerIds(
+		[trailerRecordId],
+		ACTIVE_ASSIGNMENT_STATUSES
+	);
+
+	for (const assignment of activeAssignments) {
+		await updateRecordById(
+			AIRTABLE_SCHEMA.TABLES.ASSINGMENTS,
+			assignment.recordId,
+			{
+				[AIRTABLE_SCHEMA.FIELDS.ASSINGMENTS.STATUS]: "Expired",
+				[AIRTABLE_SCHEMA.FIELDS.ASSINGMENTS.END_DATE]:
+					assignment.endDate || new Date().toISOString().slice(0, 10),
+				[AIRTABLE_SCHEMA.FIELDS.ASSINGMENTS.NOTES]: notes || assignment.notes || undefined,
+			}
+		);
+	}
+
+	await syncTrailerStatusForAvailability(trailerRecordId);
+	return activeAssignments.length;
+}
+
+export async function updateAdminEntityStatus({
+	entityType,
+	recordId,
+	nextStatus,
+	reason,
+}) {
+	const normalizedEntityType =
+		typeof entityType === "string" ? entityType.trim().toLowerCase() : "";
+	const normalizedRecordId =
+		typeof recordId === "string" ? recordId.trim() : "";
+	const normalizedNextStatus =
+		typeof nextStatus === "string" ? nextStatus : "";
+	const normalizedReason =
+		typeof reason === "string" ? reason.trim() : "";
+
+	if (!normalizedEntityType || !normalizedRecordId || !normalizedNextStatus) {
+		throw new ApplicationDecisionError(
+			"VALIDATION",
+			"Entity type, record ID, and next status are required."
+		);
+	}
+
+	if (normalizedEntityType === "customer") {
+		if (!ADMIN_CUSTOMER_STATUS_OPTIONS.includes(normalizedNextStatus)) {
+			throw new ApplicationDecisionError(
+				"VALIDATION",
+				"Selected customer status is not supported."
+			);
+		}
+
+		await updateRecordById(
+			AIRTABLE_SCHEMA.TABLES.CUSTOMERS,
+			normalizedRecordId,
+			{
+				[AIRTABLE_SCHEMA.FIELDS.CUSTOMERS.STATUS]: normalizedNextStatus,
+				[AIRTABLE_SCHEMA.FIELDS.CUSTOMERS.REVIEWED_AT]: new Date().toISOString(),
+				[AIRTABLE_SCHEMA.FIELDS.CUSTOMERS.REVIEW_NOTES]:
+					normalizedReason || undefined,
+			}
+		);
+
+		return {
+			entityType: normalizedEntityType,
+			recordId: normalizedRecordId,
+			nextStatus: normalizedNextStatus,
+			sideEffects: [],
+			confirmation: getStatusTransitionSummary(
+				normalizedEntityType,
+				normalizedNextStatus
+			),
+		};
+	}
+
+	if (normalizedEntityType === "rental") {
+		if (!ADMIN_RENTAL_STATUS_OPTIONS.includes(normalizedNextStatus)) {
+			throw new ApplicationDecisionError(
+				"VALIDATION",
+				"Selected rental status is not supported."
+			);
+		}
+
+		const [rental] = await getRentalsByIds([normalizedRecordId]);
+		if (!rental) {
+			throw new ApplicationDecisionError("NOT_FOUND", "Rental record not found.");
+		}
+
+		const sideEffects = [];
+		await updateRecordById(
+			AIRTABLE_SCHEMA.TABLES.RENTALS,
+			normalizedRecordId,
+			{
+				[AIRTABLE_SCHEMA.FIELDS.RENTALS.STATUS]: normalizedNextStatus,
+			}
+		);
+
+		if (
+			normalizedNextStatus === "Returned" ||
+			normalizedNextStatus === RENTAL_STATUS_CANCELLED
+		) {
+			await updateRecordById(
+				AIRTABLE_SCHEMA.TABLES.RENTALS,
+				normalizedRecordId,
+				{
+					[AIRTABLE_SCHEMA.FIELDS.RENTALS.TRAILER]: [],
+				}
+			);
+			const expiredCount = await expireAssignmentsByRentalRecordId(
+				normalizedRecordId,
+				normalizedReason
+			);
+			sideEffects.push(
+				`Expired ${expiredCount} active assignment${expiredCount === 1 ? "" : "s"} for this rental.`
+			);
+		}
+
+		return {
+			entityType: normalizedEntityType,
+			recordId: normalizedRecordId,
+			nextStatus: normalizedNextStatus,
+			sideEffects,
+			confirmation: getStatusTransitionSummary(
+				normalizedEntityType,
+				normalizedNextStatus
+			),
+			rentalId: rental.id,
+		};
+	}
+
+	if (normalizedEntityType === "trailer") {
+		if (!ADMIN_TRAILER_STATUS_OPTIONS.includes(normalizedNextStatus)) {
+			throw new ApplicationDecisionError(
+				"VALIDATION",
+				"Selected trailer status is not supported."
+			);
+		}
+
+		const [trailer] = await getTrailersByIds([normalizedRecordId]);
+		if (!trailer) {
+			throw new ApplicationDecisionError("NOT_FOUND", "Trailer record not found.");
+		}
+
+		const sideEffects = [];
+		if (normalizedNextStatus === "Available" || normalizedNextStatus === "Maintenance") {
+			const affectedAssignments = await getAssignmentsByTrailerIds(
+				[normalizedRecordId],
+				ACTIVE_ASSIGNMENT_STATUSES
+			);
+			if (affectedAssignments.length) {
+				const expiredCount = await expireAssignmentsByTrailerRecordId(
+					normalizedRecordId,
+					normalizedReason
+				);
+				sideEffects.push(
+					`Expired ${expiredCount} active assignment${expiredCount === 1 ? "" : "s"} tied to this trailer.`
+				);
+			}
+		}
+
+		await updateRecordById(
+			AIRTABLE_SCHEMA.TABLES.TRAILERS,
+			normalizedRecordId,
+			{
+				[AIRTABLE_SCHEMA.FIELDS.TRAILERS.STATUS]: normalizedNextStatus,
+			}
+		);
+
+		return {
+			entityType: normalizedEntityType,
+			recordId: normalizedRecordId,
+			nextStatus: normalizedNextStatus,
+			sideEffects,
+			confirmation: getStatusTransitionSummary(
+				normalizedEntityType,
+				normalizedNextStatus
+			),
+			trailerId: trailer.id,
+		};
+	}
+
+	throw new ApplicationDecisionError(
+		"VALIDATION",
+		"Entity type must be customer, rental, or trailer."
+	);
 }
 
 export async function getPortalDataByEmail(email) {

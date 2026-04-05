@@ -1,13 +1,26 @@
-export default function StatusBadge({ status }) {
+export default function StatusBadge({
+	status,
+	asButton = false,
+	showChevron = false,
+	className = "",
+	children,
+	...props
+}) {
 	const value = status || "Unknown";
-	const className = getStatusClassName(value);
+	const toneClass = getStatusClassName(value);
+	const Component = asButton ? "button" : "span";
 
 	return (
-		<span
-			className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${className}`}
+		<Component
+			{...props}
+			className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold ${toneClass} ${
+				asButton ? "cursor-pointer transition-opacity hover:opacity-90" : ""
+			} ${className}`}
 		>
-			{value}
-		</span>
+			<span>{value}</span>
+			{showChevron ? <span aria-hidden="true" className="text-[10px] leading-none">v</span> : null}
+			{children}
+		</Component>
 	);
 }
 

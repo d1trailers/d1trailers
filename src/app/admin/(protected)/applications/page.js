@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Card from "@/components/ui/Card";
 import StateCard from "@/components/admin/StateCard";
 import StatusBadge from "@/components/admin/StatusBadge";
@@ -43,7 +43,9 @@ function buildTrailerHover(trailer) {
 }
 
 function getDefaultDraft(details) {
-	const firstRental = Array.isArray(details?.rentals) ? details.rentals[0] : null;
+	const firstRental = Array.isArray(details?.rentals)
+		? details.rentals[0]
+		: null;
 	const selectedTrailerRecordIds = Array.isArray(firstRental?.trailers)
 		? firstRental.trailers.map((trailer) => trailer.recordId).filter(Boolean)
 		: [];
@@ -51,7 +53,6 @@ function getDefaultDraft(details) {
 	return {
 		reviewNotes: details?.customer?.reviewNotes ?? "",
 		trailerRecordIds: selectedTrailerRecordIds,
-		trailerPickerValue: "",
 		rate: toInputNumber(firstRental?.rate),
 		depositAmount: toInputNumber(firstRental?.depositAmount),
 		contractStartDate: toInputDate(firstRental?.contractStartDate),
@@ -68,7 +69,12 @@ function FieldLabel({ children }) {
 	);
 }
 
-function ActionButton({ tone = "neutral", loading = false, children, ...props }) {
+function ActionButton({
+	tone = "neutral",
+	loading = false,
+	children,
+	...props
+}) {
 	const toneClass =
 		tone === "danger"
 			? "bg-red-700 hover:bg-red-800 text-neutral-50"
@@ -95,11 +101,19 @@ export default function AdminApplicationsPage() {
 	const [error, setError] = useState("");
 	const [expandedCustomerId, setExpandedCustomerId] = useState(null);
 	const [detailByCustomerId, setDetailByCustomerId] = useState({});
-	const [detailLoadingByCustomerId, setDetailLoadingByCustomerId] = useState({});
+	const [detailLoadingByCustomerId, setDetailLoadingByCustomerId] = useState(
+		{},
+	);
 	const [detailErrorByCustomerId, setDetailErrorByCustomerId] = useState({});
-	const [decisionDraftByCustomerId, setDecisionDraftByCustomerId] = useState({});
-	const [actionLoadingByCustomerId, setActionLoadingByCustomerId] = useState({});
+	const [decisionDraftByCustomerId, setDecisionDraftByCustomerId] = useState(
+		{},
+	);
+	const [actionLoadingByCustomerId, setActionLoadingByCustomerId] = useState(
+		{},
+	);
 	const [actionErrorByCustomerId, setActionErrorByCustomerId] = useState({});
+	const [trailerMenuCustomerId, setTrailerMenuCustomerId] = useState(null);
+	const trailerMenuRef = useRef(null);
 
 	const loadApplications = useCallback(async ({ background = false } = {}) => {
 		if (!background) {
@@ -114,7 +128,7 @@ export default function AdminApplicationsPage() {
 				setError(
 					typeof json?.error === "string"
 						? json.error
-						: "Failed to load applications."
+						: "Failed to load applications.",
 				);
 				if (!background) setLoading(false);
 				return;
@@ -133,14 +147,30 @@ export default function AdminApplicationsPage() {
 		loadApplications();
 	}, [loadApplications]);
 
+	useEffect(() => {
+		function handlePointerDown(event) {
+			if (!trailerMenuRef.current?.contains(event.target)) {
+				setTrailerMenuCustomerId(null);
+			}
+		}
+
+		document.addEventListener("mousedown", handlePointerDown);
+		return () => document.removeEventListener("mousedown", handlePointerDown);
+	}, []);
+
 	async function loadApplicationDetails(customerId) {
 		if (!customerId) return;
 
-		setDetailLoadingByCustomerId((current) => ({ ...current, [customerId]: true }));
+		setDetailLoadingByCustomerId((current) => ({
+			...current,
+			[customerId]: true,
+		}));
 		setDetailErrorByCustomerId((current) => ({ ...current, [customerId]: "" }));
 
 		try {
-			const res = await fetch(`/api/admin/applications/${encodeURIComponent(customerId)}`);
+			const res = await fetch(
+				`/api/admin/applications/${encodeURIComponent(customerId)}`,
+			);
 			const json = await res.json().catch(() => ({}));
 
 			if (!res.ok) {
@@ -163,13 +193,19 @@ export default function AdminApplicationsPage() {
 				...current,
 				[customerId]: getDefaultDraft(json),
 			}));
-			setDetailLoadingByCustomerId((current) => ({ ...current, [customerId]: false }));
+			setDetailLoadingByCustomerId((current) => ({
+				...current,
+				[customerId]: false,
+			}));
 		} catch {
 			setDetailErrorByCustomerId((current) => ({
 				...current,
 				[customerId]: "Failed to load application details.",
 			}));
-			setDetailLoadingByCustomerId((current) => ({ ...current, [customerId]: false }));
+			setDetailLoadingByCustomerId((current) => ({
+				...current,
+				[customerId]: false,
+			}));
 		}
 	}
 
@@ -183,25 +219,21 @@ export default function AdminApplicationsPage() {
 		}));
 	}
 
-	function addSelectedTrailer(customerId) {
+	function addSelectedTrailer(customerId, trailerRecordId) {
+		if (!trailerRecordId) return;
 		setDecisionDraftByCustomerId((current) => {
 			const draft = current[customerId] || {};
-			const nextTrailerRecordId = draft.trailerPickerValue || "";
-			if (!nextTrailerRecordId) return current;
-
-			const nextTrailerRecordIds = Array.from(
-				new Set([...(draft.trailerRecordIds || []), nextTrailerRecordId])
-			);
-
 			return {
 				...current,
 				[customerId]: {
 					...draft,
-					trailerRecordIds: nextTrailerRecordIds,
-					trailerPickerValue: "",
+					trailerRecordIds: Array.from(
+						new Set([...(draft.trailerRecordIds || []), trailerRecordId]),
+					),
 				},
 			};
 		});
+		setTrailerMenuCustomerId(null);
 	}
 
 	function removeSelectedTrailer(customerId, trailerRecordId) {
@@ -212,7 +244,7 @@ export default function AdminApplicationsPage() {
 				[customerId]: {
 					...draft,
 					trailerRecordIds: (draft.trailerRecordIds || []).filter(
-						(recordId) => recordId !== trailerRecordId
+						(recordId) => recordId !== trailerRecordId,
 					),
 				},
 			};
@@ -221,20 +253,19 @@ export default function AdminApplicationsPage() {
 
 	async function submitDecision(customerId, action) {
 		const draft = decisionDraftByCustomerId[customerId] || {};
-		const payload = {
-			action,
-			reviewNotes: draft.reviewNotes || "",
-		};
+		const payload = { action, reviewNotes: draft.reviewNotes || "" };
 
 		if (action === "approve") {
-			if (!Array.isArray(draft.trailerRecordIds) || !draft.trailerRecordIds.length) {
+			if (
+				!Array.isArray(draft.trailerRecordIds) ||
+				!draft.trailerRecordIds.length
+			) {
 				setActionErrorByCustomerId((current) => ({
 					...current,
 					[customerId]: "Approval requires at least one trailer selection.",
 				}));
 				return;
 			}
-
 			if (!draft.rate || Number.isNaN(Number(draft.rate))) {
 				setActionErrorByCustomerId((current) => ({
 					...current,
@@ -242,7 +273,6 @@ export default function AdminApplicationsPage() {
 				}));
 				return;
 			}
-
 			if (!draft.depositAmount || Number.isNaN(Number(draft.depositAmount))) {
 				setActionErrorByCustomerId((current) => ({
 					...current,
@@ -250,7 +280,6 @@ export default function AdminApplicationsPage() {
 				}));
 				return;
 			}
-
 			if (!draft.contractStartDate) {
 				setActionErrorByCustomerId((current) => ({
 					...current,
@@ -263,11 +292,15 @@ export default function AdminApplicationsPage() {
 			payload.rate = draft.rate;
 			payload.depositAmount = draft.depositAmount;
 			payload.contractStartDate = draft.contractStartDate;
-			payload.operationalStartDate = draft.operationalStartDate || draft.contractStartDate;
+			payload.operationalStartDate =
+				draft.operationalStartDate || draft.contractStartDate;
 			payload.endDate = draft.endDate || undefined;
 		}
 
-		setActionLoadingByCustomerId((current) => ({ ...current, [customerId]: true }));
+		setActionLoadingByCustomerId((current) => ({
+			...current,
+			[customerId]: true,
+		}));
 		setActionErrorByCustomerId((current) => ({ ...current, [customerId]: "" }));
 
 		try {
@@ -277,9 +310,8 @@ export default function AdminApplicationsPage() {
 					method: "POST",
 					headers: { "Content-Type": "application/json" },
 					body: JSON.stringify(payload),
-				}
+				},
 			);
-
 			const json = await res.json().catch(() => ({}));
 			if (!res.ok) {
 				setActionErrorByCustomerId((current) => ({
@@ -298,13 +330,19 @@ export default function AdminApplicationsPage() {
 
 			await loadApplications({ background: true });
 			await loadApplicationDetails(customerId);
-			setActionLoadingByCustomerId((current) => ({ ...current, [customerId]: false }));
+			setActionLoadingByCustomerId((current) => ({
+				...current,
+				[customerId]: false,
+			}));
 		} catch {
 			setActionErrorByCustomerId((current) => ({
 				...current,
 				[customerId]: "Failed to process application decision.",
 			}));
-			setActionLoadingByCustomerId((current) => ({ ...current, [customerId]: false }));
+			setActionLoadingByCustomerId((current) => ({
+				...current,
+				[customerId]: false,
+			}));
 		}
 	}
 
@@ -321,7 +359,13 @@ export default function AdminApplicationsPage() {
 	}
 
 	if (error) {
-		return <StateCard title="Applications Unavailable" message={error} tone="error" />;
+		return (
+			<StateCard
+				title="Applications Unavailable"
+				message={error}
+				tone="error"
+			/>
+		);
 	}
 
 	if (!data.length) {
@@ -363,10 +407,11 @@ export default function AdminApplicationsPage() {
 					return trailers;
 				})();
 				const selectedTrailers = trailerCatalog.filter((trailer) =>
-					(draft.trailerRecordIds || []).includes(trailer.recordId)
+					(draft.trailerRecordIds || []).includes(trailer.recordId),
 				);
 				const availableTrailerChoices = trailerCatalog.filter(
-					(trailer) => !(draft.trailerRecordIds || []).includes(trailer.recordId)
+					(trailer) =>
+						!(draft.trailerRecordIds || []).includes(trailer.recordId),
 				);
 
 				return (
@@ -382,21 +427,6 @@ export default function AdminApplicationsPage() {
 							</div>
 							<div className="flex items-center gap-2">
 								<StatusBadge status={application.status} />
-								<ActionButton
-									type="button"
-									onClick={() => {
-										if (isExpanded) {
-											setExpandedCustomerId(null);
-											return;
-										}
-										setExpandedCustomerId(application.customerId);
-										if (!details) {
-											loadApplicationDetails(application.customerId);
-										}
-									}}
-								>
-									{isExpanded ? "Close Review" : "Review"}
-								</ActionButton>
 							</div>
 						</div>
 						<div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm text-neutral-600 dark:text-neutral-400">
@@ -415,7 +445,19 @@ export default function AdminApplicationsPage() {
 								{application.reviewNotes}
 							</p>
 						) : null}
-
+						<ActionButton
+							type="button"
+							onClick={() => {
+								if (isExpanded) {
+									setExpandedCustomerId(null);
+									return;
+								}
+								setExpandedCustomerId(application.customerId);
+								if (!details) loadApplicationDetails(application.customerId);
+							}}
+						>
+							{isExpanded ? "Close Review" : "Review"}
+						</ActionButton>
 						{isExpanded ? (
 							<div className="space-y-4 border-t border-(--border-soft) pt-4">
 								{detailLoading ? (
@@ -423,11 +465,11 @@ export default function AdminApplicationsPage() {
 										Loading application details...
 									</p>
 								) : null}
-
 								{detailError ? (
-									<p className="text-sm text-red-600 font-medium">{detailError}</p>
+									<p className="text-sm text-red-600 font-medium">
+										{detailError}
+									</p>
 								) : null}
-
 								{details && !detailLoading ? (
 									<>
 										<div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
@@ -437,39 +479,69 @@ export default function AdminApplicationsPage() {
 												</p>
 												{details.rentals?.length ? (
 													details.rentals.map((rental) => (
-														<div key={rental.recordId} className="surface-subtle rounded-lg p-3">
-															<p className="font-semibold">{rental.rentalId || rental.recordId}</p>
+														<div
+															key={rental.recordId}
+															className="surface-subtle rounded-lg p-3"
+														>
+															<p className="font-semibold">
+																{rental.rentalId || rental.recordId}
+															</p>
 															<p>Status: {rental.status || "-"}</p>
-															<p>Contract Start: {formatDate(rental.contractStartDate)}</p>
-															<p>Operational Start: {formatDate(rental.operationalStartDate)}</p>
+															<p>
+																Contract Start:{" "}
+																{formatDate(rental.contractStartDate)}
+															</p>
+															<p>
+																Operational Start:{" "}
+																{formatDate(rental.operationalStartDate)}
+															</p>
 															<p>End Date: {formatDate(rental.endDate)}</p>
 															<p>Rate: {rental.rate ?? "-"}</p>
 															<p>Deposit: {rental.depositAmount ?? "-"}</p>
-															<p>Assignments: {rental.assignments?.length ?? 0}</p>
 															<p>
-																Trailers: {rental.trailers?.length
-																	? rental.trailers.map((trailer) => `${trailer.trailerType || "Trailer"} (${trailer.plateNumber || "No plate"})`).join(", ")
+																Assignments: {rental.assignments?.length ?? 0}
+															</p>
+															<p>
+																Trailers:{" "}
+																{rental.trailers?.length
+																	? rental.trailers
+																			.map(
+																				(trailer) =>
+																					`${trailer.trailerType || "Trailer"} (${trailer.plateNumber || "No plate"})`,
+																			)
+																			.join(", ")
 																	: "-"}
 															</p>
 														</div>
 													))
 												) : (
-													<p className="text-neutral-600 dark:text-neutral-400">No rentals linked.</p>
+													<p className="text-neutral-600 dark:text-neutral-400">
+														No rentals linked.
+													</p>
 												)}
 											</div>
-
 											<div className="space-y-2">
 												<p className="font-semibold text-neutral-900 dark:text-neutral-100">
 													Customer Documents
 												</p>
 												{details.documents?.length ? (
 													details.documents.map((document) => (
-														<div key={document.id} className="surface-subtle rounded-lg p-3">
-															<p className="font-semibold">{document.type || "Document"}</p>
+														<div
+															key={document.id}
+															className="surface-subtle rounded-lg p-3"
+														>
+															<p className="font-semibold">
+																{document.type || "Document"}
+															</p>
 															<p>Category: {document.category || "-"}</p>
 															<p>Uploaded: {formatDate(document.uploadedAt)}</p>
 															{document.attachments?.[0]?.url ? (
-																<a className="underline text-sm" href={document.attachments[0].url} target="_blank" rel="noopener noreferrer">
+																<a
+																	className="underline text-sm"
+																	href={document.attachments[0].url}
+																	target="_blank"
+																	rel="noopener noreferrer"
+																>
 																	View Attachment
 																</a>
 															) : (
@@ -478,22 +550,32 @@ export default function AdminApplicationsPage() {
 														</div>
 													))
 												) : (
-													<p className="text-neutral-600 dark:text-neutral-400">No customer-level documents.</p>
+													<p className="text-neutral-600 dark:text-neutral-400">
+														No customer-level documents.
+													</p>
 												)}
 											</div>
 										</div>
 
 										{details.conflicts?.length ? (
 											<div className="space-y-2">
-												<p className="font-semibold text-red-700 dark:text-red-400">Current Assignment Conflicts</p>
+												<p className="font-semibold text-red-700 dark:text-red-400">
+													Current Assignment Conflicts
+												</p>
 												{details.conflicts.map((conflict, index) => (
 													<div
 														key={`${conflict.trailerRecordId}-${index}`}
 														className="rounded-lg border border-red-300 bg-red-50/70 dark:bg-red-950/30 p-3 text-sm"
 													>
 														<p className="font-semibold">{conflict.message}</p>
-														<p>Trailer: {conflict.trailerId || conflict.trailerRecordId}</p>
-														<p>Blocking Assignments: {conflict.assignments?.length ?? 0}</p>
+														<p>
+															Trailer:{" "}
+															{conflict.trailerId || conflict.trailerRecordId}
+														</p>
+														<p>
+															Blocking Assignments:{" "}
+															{conflict.assignments?.length ?? 0}
+														</p>
 													</div>
 												))}
 											</div>
@@ -504,7 +586,13 @@ export default function AdminApplicationsPage() {
 												<span className="font-semibold">Review Notes</span>
 												<textarea
 													value={draft.reviewNotes || ""}
-													onChange={(event) => updateDecisionDraft(application.customerId, "reviewNotes", event.target.value)}
+													onChange={(event) =>
+														updateDecisionDraft(
+															application.customerId,
+															"reviewNotes",
+															event.target.value,
+														)
+													}
 													className="w-full min-h-24 p-3 rounded-lg border border-(--border-soft) bg-neutral-50 dark:bg-neutral-900/40"
 													placeholder="Add notes for this decision"
 												/>
@@ -512,49 +600,99 @@ export default function AdminApplicationsPage() {
 
 											<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 												<div className="md:col-span-2 space-y-2">
-													<span className="block text-sm font-semibold text-neutral-700 dark:text-neutral-300">Trailers</span>
-													<div className="rounded-lg border border-(--border-soft) bg-neutral-50 dark:bg-neutral-900/40 p-3 space-y-3">
-														<div className="flex flex-wrap gap-2 min-h-10">
-															{selectedTrailers.length ? selectedTrailers.map((trailer) => (
+													<span className="block text-sm font-semibold text-neutral-700 dark:text-neutral-300">
+														Trailers
+													</span>
+													<div
+														ref={
+															trailerMenuCustomerId === application.customerId
+																? trailerMenuRef
+																: null
+														}
+														className="relative rounded-xl border border-(--border-soft) bg-neutral-50 dark:bg-neutral-900/40 px-3 py-3"
+													>
+														<div className="flex flex-wrap items-center gap-2">
+															{selectedTrailers.length ? (
+																selectedTrailers.map((trailer) => (
+																	<button
+																		key={trailer.recordId}
+																		type="button"
+																		title={buildTrailerHover(trailer)}
+																		onClick={() =>
+																			removeSelectedTrailer(
+																				application.customerId,
+																				trailer.recordId,
+																			)
+																		}
+																		className="inline-flex items-center gap-2 rounded-full border border-(--border-soft) bg-white px-3 py-1.5 text-sm text-neutral-800 dark:bg-neutral-950 dark:text-neutral-100"
+																	>
+																		<span>
+																			{trailer.trailerType || "Trailer"}
+																		</span>
+																		<span className="text-neutral-500">
+																			{trailer.plateNumber || "No plate"}
+																		</span>
+																		<span className="text-red-600">x</span>
+																	</button>
+																))
+															) : (
+																<span className="text-sm text-neutral-500">
+																	No trailers selected yet.
+																</span>
+															)}
+															<div className="ml-auto relative">
 																<button
-																	key={trailer.recordId}
 																	type="button"
-																	title={buildTrailerHover(trailer)}
-																	onClick={() => removeSelectedTrailer(application.customerId, trailer.recordId)}
-																	className="inline-flex items-center gap-2 rounded-full bg-white dark:bg-neutral-950 border border-(--border-soft) px-3 py-1.5 text-sm text-neutral-800 dark:text-neutral-100"
+																	onClick={() =>
+																		setTrailerMenuCustomerId((current) =>
+																			current === application.customerId
+																				? null
+																				: application.customerId,
+																		)
+																	}
+																	className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-(--branding-700) text-lg font-semibold text-neutral-50"
+																	aria-label="Add trailer"
 																>
-																	<span>{trailer.trailerType || "Trailer"}</span>
-																	<span className="text-neutral-500">{trailer.plateNumber || "No plate"}</span>
-																	<span className="text-red-600">x</span>
+																	+
 																</button>
-															)) : <span className="text-sm text-neutral-500">No trailers selected yet.</span>}
-														</div>
-
-														<div className="flex flex-col md:flex-row gap-2">
-															<select
-																value={draft.trailerPickerValue || ""}
-																onChange={(event) => updateDecisionDraft(application.customerId, "trailerPickerValue", event.target.value)}
-																className="flex-1 p-3 rounded-lg border border-(--border-soft) bg-white dark:bg-neutral-950/50"
-															>
-																<option value="">Add trailer from available list</option>
-																{availableTrailerChoices.map((trailer) => (
-																	<option key={trailer.recordId} value={trailer.recordId}>
-																		{buildTrailerLabel(trailer)}
-																	</option>
-																))}
-															</select>
-															<button
-																type="button"
-																onClick={() => addSelectedTrailer(application.customerId)}
-																disabled={!draft.trailerPickerValue}
-																className="rounded-lg px-4 py-3 bg-(--branding-700) text-neutral-50 font-semibold disabled:opacity-60"
-															>
-																+ Add Trailer
-															</button>
+																{trailerMenuCustomerId ===
+																application.customerId ? (
+																	<div className="absolute right-0 top-[calc(100%+0.5rem)] z-[60] min-w-72 overflow-hidden rounded-xl border border-(--border-soft) bg-white shadow-2xl dark:bg-neutral-950">
+																		<div className="border-b border-(--border-soft) px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-neutral-500">
+																			Add Trailer
+																		</div>
+																		<div className="max-h-64 overflow-y-auto py-1">
+																			{availableTrailerChoices.length ? (
+																				availableTrailerChoices.map(
+																					(trailer) => (
+																						<button
+																							key={trailer.recordId}
+																							type="button"
+																							onClick={() =>
+																								addSelectedTrailer(
+																									application.customerId,
+																									trailer.recordId,
+																								)
+																							}
+																							className="block w-full px-3 py-2 text-left text-sm transition-colors hover:bg-neutral-100 dark:hover:bg-neutral-900"
+																							title={buildTrailerHover(trailer)}
+																						>
+																							{buildTrailerLabel(trailer)}
+																						</button>
+																					),
+																				)
+																			) : (
+																				<p className="px-3 py-3 text-sm text-neutral-500">
+																					No more available trailers.
+																				</p>
+																			)}
+																		</div>
+																	</div>
+																) : null}
+															</div>
 														</div>
 													</div>
 												</div>
-
 												<FieldLabel>
 													<span className="font-semibold">Rate</span>
 													<input
@@ -562,7 +700,13 @@ export default function AdminApplicationsPage() {
 														step="0.01"
 														min="0"
 														value={draft.rate || ""}
-														onChange={(event) => updateDecisionDraft(application.customerId, "rate", event.target.value)}
+														onChange={(event) =>
+															updateDecisionDraft(
+																application.customerId,
+																"rate",
+																event.target.value,
+															)
+														}
 														className="w-full p-3 rounded-lg border border-(--border-soft) bg-neutral-50 dark:bg-neutral-900/40"
 														placeholder="475.00"
 													/>
@@ -574,26 +718,48 @@ export default function AdminApplicationsPage() {
 														step="0.01"
 														min="0"
 														value={draft.depositAmount || ""}
-														onChange={(event) => updateDecisionDraft(application.customerId, "depositAmount", event.target.value)}
+														onChange={(event) =>
+															updateDecisionDraft(
+																application.customerId,
+																"depositAmount",
+																event.target.value,
+															)
+														}
 														className="w-full p-3 rounded-lg border border-(--border-soft) bg-neutral-50 dark:bg-neutral-900/40"
 														placeholder="500.00"
 													/>
 												</FieldLabel>
 												<FieldLabel>
-													<span className="font-semibold">Contract Start Date</span>
+													<span className="font-semibold">
+														Contract Start Date
+													</span>
 													<input
 														type="date"
 														value={draft.contractStartDate || ""}
-														onChange={(event) => updateDecisionDraft(application.customerId, "contractStartDate", event.target.value)}
+														onChange={(event) =>
+															updateDecisionDraft(
+																application.customerId,
+																"contractStartDate",
+																event.target.value,
+															)
+														}
 														className="w-full p-3 rounded-lg border border-(--border-soft) bg-neutral-50 dark:bg-neutral-900/40"
 													/>
 												</FieldLabel>
 												<FieldLabel>
-													<span className="font-semibold">Operational Start Date</span>
+													<span className="font-semibold">
+														Operational Start Date
+													</span>
 													<input
 														type="date"
 														value={draft.operationalStartDate || ""}
-														onChange={(event) => updateDecisionDraft(application.customerId, "operationalStartDate", event.target.value)}
+														onChange={(event) =>
+															updateDecisionDraft(
+																application.customerId,
+																"operationalStartDate",
+																event.target.value,
+															)
+														}
 														className="w-full p-3 rounded-lg border border-(--border-soft) bg-neutral-50 dark:bg-neutral-900/40"
 													/>
 												</FieldLabel>
@@ -602,49 +768,96 @@ export default function AdminApplicationsPage() {
 													<input
 														type="date"
 														value={draft.endDate || ""}
-														onChange={(event) => updateDecisionDraft(application.customerId, "endDate", event.target.value)}
+														onChange={(event) =>
+															updateDecisionDraft(
+																application.customerId,
+																"endDate",
+																event.target.value,
+															)
+														}
 														className="w-full p-3 rounded-lg border border-(--border-soft) bg-neutral-50 dark:bg-neutral-900/40"
 													/>
 												</FieldLabel>
 											</div>
 
 											<div className="space-y-2 text-sm">
-												<p className="font-semibold text-neutral-900 dark:text-neutral-100">Assignment Timeline</p>
-												{details.rentals?.some((rental) => rental.assignments?.length) ? (
+												<p className="font-semibold text-neutral-900 dark:text-neutral-100">
+													Assignment Timeline
+												</p>
+												{details.rentals?.some(
+													(rental) => rental.assignments?.length,
+												) ? (
 													details.rentals.flatMap((rental) =>
 														(rental.assignments || []).map((assignment) => (
-															<div key={assignment.assignmentId} className="surface-subtle rounded-lg p-3">
-																<p className="font-semibold">{rental.rentalId} | {assignment.status || "-"}</p>
-																<p>Start: {formatDate(assignment.startDate)} | End: {formatDate(assignment.endDate)}</p>
+															<div
+																key={assignment.assignmentId}
+																className="surface-subtle rounded-lg p-3"
+															>
+																<p className="font-semibold">
+																	{rental.rentalId} | {assignment.status || "-"}
+																</p>
 																<p>
-																	Trailers: {assignment.trailers?.length
-																		? assignment.trailers.map((trailer) => `${trailer.trailerType || "Trailer"} (${trailer.plateNumber || "No plate"})`).join(", ")
+																	Start: {formatDate(assignment.startDate)} |
+																	End: {formatDate(assignment.endDate)}
+																</p>
+																<p>
+																	Trailers:{" "}
+																	{assignment.trailers?.length
+																		? assignment.trailers
+																				.map(
+																					(trailer) =>
+																						`${trailer.trailerType || "Trailer"} (${trailer.plateNumber || "No plate"})`,
+																				)
+																				.join(", ")
 																		: "-"}
 																</p>
 															</div>
-														))
+														)),
 													)
 												) : (
-													<p className="text-neutral-600 dark:text-neutral-400">No assignments recorded yet.</p>
+													<p className="text-neutral-600 dark:text-neutral-400">
+														No assignments recorded yet.
+													</p>
 												)}
 											</div>
 
-											{actionError ? <p className="text-sm text-red-600 font-medium">{actionError}</p> : null}
-
+											{actionError ? (
+												<p className="text-sm text-red-600 font-medium">
+													{actionError}
+												</p>
+											) : null}
 											<div className="flex flex-wrap gap-2">
 												<ActionButton
 													type="button"
 													tone="primary"
 													loading={Boolean(actionLoading)}
-													onClick={() => submitDecision(application.customerId, "approve")}
+													onClick={() =>
+														submitDecision(application.customerId, "approve")
+													}
 													disabled={!trailerCatalog.length}
 												>
 													Approve Application
 												</ActionButton>
-												<ActionButton type="button" loading={Boolean(actionLoading)} onClick={() => submitDecision(application.customerId, "request_info")}>
+												<ActionButton
+													type="button"
+													loading={Boolean(actionLoading)}
+													onClick={() =>
+														submitDecision(
+															application.customerId,
+															"request_info",
+														)
+													}
+												>
 													Request More Info
 												</ActionButton>
-												<ActionButton type="button" tone="danger" loading={Boolean(actionLoading)} onClick={() => submitDecision(application.customerId, "deny")}>
+												<ActionButton
+													type="button"
+													tone="danger"
+													loading={Boolean(actionLoading)}
+													onClick={() =>
+														submitDecision(application.customerId, "deny")
+													}
+												>
 													Deny Application
 												</ActionButton>
 											</div>

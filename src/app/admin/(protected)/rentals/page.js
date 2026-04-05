@@ -1,10 +1,20 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Card from "@/components/ui/Card";
 import StateCard from "@/components/admin/StateCard";
 import StatusBadge from "@/components/admin/StatusBadge";
+import StatusChangeControl from "@/components/admin/StatusChangeControl";
 import { LoadingCardGrid, LoadingPanel } from "@/components/ui/LoadingSkeleton";
+
+const RENTAL_STATUS_OPTIONS = [
+	"Submitted",
+	"Awaiting First Payment",
+	"Active",
+	"Overdue",
+	"Returned",
+	"Cancelled ",
+];
 
 function formatDate(value) {
 	if (!value) return "-";
@@ -27,39 +37,33 @@ export default function AdminRentalsPage() {
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState("");
 
-	useEffect(() => {
-		let mounted = true;
+	const loadRentals = useCallback(async () => {
+		try {
+			const res = await fetch("/api/admin/rentals");
+			const json = await res.json().catch(() => []);
 
-		async function loadRentals() {
-			try {
-				const res = await fetch("/api/admin/rentals");
-				const json = await res.json().catch(() => []);
-
-				if (!mounted) return;
-				if (!res.ok) {
-					setError(
-						typeof json?.error === "string"
-							? json.error
-							: "Failed to load rentals."
-					);
-					setLoading(false);
-					return;
-				}
-
-				setData(Array.isArray(json) ? json : []);
+			if (!res.ok) {
+				setError(
+					typeof json?.error === "string"
+						? json.error
+						: "Failed to load rentals.",
+				);
 				setLoading(false);
-			} catch {
-				if (!mounted) return;
-				setError("Failed to load rentals.");
-				setLoading(false);
+				return;
 			}
-		}
 
-		loadRentals();
-		return () => {
-			mounted = false;
-		};
+			setData(Array.isArray(json) ? json : []);
+			setError("");
+			setLoading(false);
+		} catch {
+			setError("Failed to load rentals.");
+			setLoading(false);
+		}
 	}, []);
+
+	useEffect(() => {
+		loadRentals();
+	}, [loadRentals]);
 
 	if (loading) {
 		return (
@@ -101,9 +105,28 @@ export default function AdminRentalsPage() {
 								{rental.rentalId}
 							</p>
 						</div>
-						<div className="flex flex-wrap items-center justify-end gap-2">
-							<StatusBadge status={rental.status} />
-							<StatusBadge status={rental.billingStatus || "Billing Pending"} />
+						<div className="flex flex-row items-end gap-3 text-sm">
+							<div className="flex items-center gap-2">
+								<span className="font-medium text-neutral-600 dark:text-neutral-400">
+									Rental Status
+								</span>
+								<StatusChangeControl
+									entityType="rental"
+									recordId={rental.recordId}
+									currentStatus={rental.status}
+									options={RENTAL_STATUS_OPTIONS}
+									label={`${rental.customerName} | ${rental.rentalId}`}
+									onUpdated={loadRentals}
+								/>
+							</div>
+							<div className="flex items-center gap-2">
+								<span className="font-medium text-neutral-600 dark:text-neutral-400">
+									Billing Status
+								</span>
+								<StatusBadge
+									status={rental.billingStatus || "Billing Pending"}
+								/>
+							</div>
 						</div>
 					</div>
 
@@ -149,7 +172,10 @@ export default function AdminRentalsPage() {
 									Assignment Timeline
 								</p>
 								{rental.assignments.map((assignment) => (
-									<div key={assignment.assignmentId} className="surface-subtle rounded-lg p-3">
+									<div
+										key={assignment.assignmentId}
+										className="surface-subtle rounded-lg p-3"
+									>
 										<div className="flex flex-wrap items-center justify-between gap-2">
 											<p className="font-semibold text-neutral-900 dark:text-neutral-100">
 												{assignment.assignmentId}
@@ -157,10 +183,13 @@ export default function AdminRentalsPage() {
 											<StatusBadge status={assignment.status} />
 										</div>
 										<p>
-											Start: {formatDate(assignment.startDate)} | End: {formatDate(assignment.endDate)}
+											Start: {formatDate(assignment.startDate)} | End:{" "}
+											{formatDate(assignment.endDate)}
 										</p>
 										<p>
-											Trailers: {Array.isArray(assignment.trailers) && assignment.trailers.length
+											Trailers:{" "}
+											{Array.isArray(assignment.trailers) &&
+											assignment.trailers.length
 												? assignment.trailers
 														.map(
 															(trailer) =>
