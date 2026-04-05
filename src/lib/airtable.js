@@ -722,6 +722,24 @@ function normalizeCurrencyValue(value) {
 	return null;
 }
 
+function normalizeRecordIdList(value) {
+	if (Array.isArray(value)) {
+		return Array.from(
+			new Set(
+				value
+					.map((entry) => (typeof entry === "string" ? entry.trim() : ""))
+					.filter(Boolean)
+			)
+		);
+	}
+
+	if (typeof value === "string" && value.trim()) {
+		return [value.trim()];
+	}
+
+	return [];
+}
+
 function summarizeTrailersByStatus(trailers) {
 	return ADMIN_INVENTORY_TRAILER_STATUSES.reduce((acc, status) => {
 		acc[status] = trailers.filter((trailer) => trailer.status === status).length;
@@ -1093,10 +1111,9 @@ export async function applyAdminApplicationDecision(customerId, decisionInput = 
 	});
 
 	if (action === APPLICATION_DECISION_ACTIONS.APPROVE) {
-		const trailerRecordId =
-			typeof decisionInput.trailerRecordId === "string"
-				? decisionInput.trailerRecordId.trim()
-				: "";
+		const trailerRecordIds = normalizeRecordIdList(
+			decisionInput.trailerRecordIds ?? decisionInput.trailerRecordId
+		);
 		const rate = normalizeCurrencyValue(decisionInput.rate);
 		const depositAmount = normalizeCurrencyValue(decisionInput.depositAmount);
 		const contractStartDate = normalizeDateOnlyValue(
@@ -1106,11 +1123,13 @@ export async function applyAdminApplicationDecision(customerId, decisionInput = 
 		const operationalStartDate = normalizeDateOnlyValue(
 			operationalStartDateInput
 		);
+		const endDateInput = decisionInput.endDate;
+		const endDate = normalizeDateOnlyValue(endDateInput);
 
-		if (!trailerRecordId) {
+		if (!trailerRecordIds.length) {
 			throw new ApplicationDecisionError(
 				"VALIDATION",
-				"Approval requires a selected trailer."
+				"Approval requires at least one selected trailer."
 			);
 		}
 
@@ -1142,6 +1161,13 @@ export async function applyAdminApplicationDecision(customerId, decisionInput = 
 			);
 		}
 
+		if (endDateInput && !endDate) {
+			throw new ApplicationDecisionError(
+				"VALIDATION",
+				"End date must be a valid YYYY-MM-DD value."
+			);
+		}
+
 		const targetRental = selectDecisionTargetRental(rentals);
 		if (!targetRental) {
 			throw new ApplicationDecisionError(
@@ -1157,49 +1183,71 @@ export async function applyAdminApplicationDecision(customerId, decisionInput = 
 			);
 		}
 
-		const [trailer] = await getTrailersByIds([trailerRecordId]);
-		if (!trailer) {
+		const selectedEndDate = endDate || targetRental.endDate || null;
+		const trailers = await getTrailersByIds(trailerRecordIds);
+		if (trailers.length !== trailerRecordIds.length) {
 			throw new ApplicationDecisionError(
 				"VALIDATION",
-				"Selected trailer was not found."
-			);
-		}
-
-		const activeAssignmentsForTrailer = await getAssignmentsByTrailerIds([
-			trailerRecordId,
-		]);
-		const conflictingAssignments = findTrailerAssignmentConflicts(
-			activeAssignmentsForTrailer,
-			trailerRecordId,
-			targetRental.recordId,
-			contractStartDate,
-			targetRental.endDate
-		);
-
-		if (trailer.status !== "Available" || conflictingAssignments.length) {
-			const conflictReason = conflictingAssignments.length
-				? "it is already assigned to another active rental"
-				: `it is currently ${trailer.status || "unavailable"}`;
-			throw new ApplicationDecisionError(
-				"CONFLICT",
-				`Trailer ${trailer.id || trailer.recordId} cannot be assigned because ${conflictReason}.`
+				"One or more selected trailers were not found."
 			);
 		}
 
 		const activeAssignmentsForRental = (
 			await getAssignmentsByRentalIds([targetRental.recordId])
 		).filter((assignment) => assignment.status === "Active");
-		const existingActiveAssignment = activeAssignmentsForRental[0] ?? null;
-		const previousTrailerRecordIds = existingActiveAssignment?.trailerRecordIds ?? [];
+		const existingAssignmentsByTrailerRecordId = new Map(
+			activeAssignmentsForRental.flatMap((assignment) =>
+				assignment.trailerRecordIds.map((recordId) => [recordId, assignment])
+			)
+		);
+		const activeAssignmentsForSelectedTrailers = await getAssignmentsByTrailerIds(
+			trailerRecordIds
+		);
+
+		for (const trailer of trailers) {
+			const trailerAssignments = activeAssignmentsForSelectedTrailers.filter(
+				(assignment) => assignment.trailerRecordIds.includes(trailer.recordId)
+			);
+			const conflictingAssignments = findTrailerAssignmentConflicts(
+				trailerAssignments,
+				trailer.recordId,
+				targetRental.recordId,
+				contractStartDate,
+				selectedEndDate
+			);
+			const alreadyAssignedToTargetRental = trailerAssignments.some((assignment) =>
+				assignment.rentalRecordIds.includes(targetRental.recordId)
+			);
+
+			if (
+				conflictingAssignments.length ||
+				(trailer.status !== "Available" && !alreadyAssignedToTargetRental)
+			) {
+				const conflictReason = conflictingAssignments.length
+					? "it is already assigned to another active rental"
+					: `it is currently ${trailer.status || "unavailable"}`;
+				throw new ApplicationDecisionError(
+					"CONFLICT",
+					`Trailer ${trailer.id || trailer.recordId} cannot be assigned because ${conflictReason}.`
+				);
+			}
+		}
+
+		const previouslyAssignedTrailerRecordIds = Array.from(
+			new Set(
+				activeAssignmentsForRental.flatMap((assignment) => assignment.trailerRecordIds)
+			)
+		);
 
 		const rentalUpdateFields = sanitizeFieldsForUpdate({
 			[AIRTABLE_SCHEMA.FIELDS.RENTALS.STATUS]: actionOutcome.rentalStatus,
-			[AIRTABLE_SCHEMA.FIELDS.RENTALS.TRAILER]: [trailerRecordId],
+			[AIRTABLE_SCHEMA.FIELDS.RENTALS.TRAILER]: trailerRecordIds,
 			[AIRTABLE_SCHEMA.FIELDS.RENTALS.RATE]: rate,
 			[AIRTABLE_SCHEMA.FIELDS.RENTALS.DEPOSIT_AMOUNT]: depositAmount,
 			[AIRTABLE_SCHEMA.FIELDS.RENTALS.CONTRACT_START_DATE]: contractStartDate,
 			[AIRTABLE_SCHEMA.FIELDS.RENTALS.OPERATIONAL_START_DATE]:
 				operationalStartDate || contractStartDate,
+			[AIRTABLE_SCHEMA.FIELDS.RENTALS.END_DATE]: selectedEndDate || null,
 			[AIRTABLE_SCHEMA.FIELDS.RENTALS.BILLING_FREQUENCY]:
 				targetRental.billingFrequency || "Monthly",
 		});
@@ -1214,26 +1262,39 @@ export async function applyAdminApplicationDecision(customerId, decisionInput = 
 			customer.recordId,
 			customerUpdateFields
 		);
-		await updateRecordById(AIRTABLE_SCHEMA.TABLES.TRAILERS, trailerRecordId, {
-			[AIRTABLE_SCHEMA.FIELDS.TRAILERS.STATUS]: "Reserved",
-		});
-
-		let assignmentRecordId = existingActiveAssignment?.recordId ?? null;
-		if (existingActiveAssignment) {
+		for (const trailerRecordId of trailerRecordIds) {
 			await updateRecordById(
-				AIRTABLE_SCHEMA.TABLES.ASSINGMENTS,
-				existingActiveAssignment.recordId,
+				AIRTABLE_SCHEMA.TABLES.TRAILERS,
+				trailerRecordId,
 				{
-					[AIRTABLE_SCHEMA.FIELDS.ASSINGMENTS.RENTAL]: [targetRental.recordId],
-					[AIRTABLE_SCHEMA.FIELDS.ASSINGMENTS.TRAILER]: [trailerRecordId],
-					[AIRTABLE_SCHEMA.FIELDS.ASSINGMENTS.START_DATE]: contractStartDate,
-					[AIRTABLE_SCHEMA.FIELDS.ASSINGMENTS.END_DATE]:
-						targetRental.endDate || undefined,
-					[AIRTABLE_SCHEMA.FIELDS.ASSINGMENTS.STATUS]: "Active",
-					[AIRTABLE_SCHEMA.FIELDS.ASSINGMENTS.NOTES]: reviewNotes || undefined,
+					[AIRTABLE_SCHEMA.FIELDS.TRAILERS.STATUS]: "Reserved",
 				}
 			);
-		} else {
+		}
+
+		const assignmentRecordIds = [];
+		for (const trailerRecordId of trailerRecordIds) {
+			const existingAssignment =
+				existingAssignmentsByTrailerRecordId.get(trailerRecordId) ?? null;
+
+			if (existingAssignment) {
+				await updateRecordById(
+					AIRTABLE_SCHEMA.TABLES.ASSINGMENTS,
+					existingAssignment.recordId,
+					{
+						[AIRTABLE_SCHEMA.FIELDS.ASSINGMENTS.RENTAL]: [targetRental.recordId],
+						[AIRTABLE_SCHEMA.FIELDS.ASSINGMENTS.TRAILER]: [trailerRecordId],
+						[AIRTABLE_SCHEMA.FIELDS.ASSINGMENTS.START_DATE]: contractStartDate,
+						[AIRTABLE_SCHEMA.FIELDS.ASSINGMENTS.END_DATE]:
+							selectedEndDate || null,
+						[AIRTABLE_SCHEMA.FIELDS.ASSINGMENTS.STATUS]: "Active",
+						[AIRTABLE_SCHEMA.FIELDS.ASSINGMENTS.NOTES]: reviewNotes || undefined,
+					}
+				);
+				assignmentRecordIds.push(existingAssignment.id);
+				continue;
+			}
+
 			const createdAssignment = await createRecord(
 				AIRTABLE_SCHEMA.TABLES.ASSINGMENTS,
 				{
@@ -1241,16 +1302,35 @@ export async function applyAdminApplicationDecision(customerId, decisionInput = 
 					[AIRTABLE_SCHEMA.FIELDS.ASSINGMENTS.TRAILER]: [trailerRecordId],
 					[AIRTABLE_SCHEMA.FIELDS.ASSINGMENTS.START_DATE]: contractStartDate,
 					[AIRTABLE_SCHEMA.FIELDS.ASSINGMENTS.END_DATE]:
-						targetRental.endDate || undefined,
+						selectedEndDate || null,
 					[AIRTABLE_SCHEMA.FIELDS.ASSINGMENTS.STATUS]: "Active",
 					[AIRTABLE_SCHEMA.FIELDS.ASSINGMENTS.NOTES]: reviewNotes || undefined,
 				}
 			);
-			assignmentRecordId = createdAssignment.id;
+			assignmentRecordIds.push(createdAssignment.id);
 		}
 
-		const releasedTrailerRecordIds = previousTrailerRecordIds.filter(
-			(recordId) => recordId && recordId !== trailerRecordId
+		const assignmentsToExpire = activeAssignmentsForRental.filter(
+			(assignment) =>
+				assignment.trailerRecordIds.some(
+					(recordId) => !trailerRecordIds.includes(recordId)
+				)
+		);
+		for (const assignment of assignmentsToExpire) {
+			await updateRecordById(
+				AIRTABLE_SCHEMA.TABLES.ASSINGMENTS,
+				assignment.recordId,
+				{
+					[AIRTABLE_SCHEMA.FIELDS.ASSINGMENTS.STATUS]: "Expired",
+					[AIRTABLE_SCHEMA.FIELDS.ASSINGMENTS.END_DATE]:
+						selectedEndDate || contractStartDate,
+					[AIRTABLE_SCHEMA.FIELDS.ASSINGMENTS.NOTES]: reviewNotes || assignment.notes || undefined,
+				}
+			);
+		}
+
+		const releasedTrailerRecordIds = previouslyAssignedTrailerRecordIds.filter(
+			(recordId) => recordId && !trailerRecordIds.includes(recordId)
 		);
 		for (const releasedTrailerRecordId of releasedTrailerRecordIds) {
 			await syncTrailerStatusForAvailability(releasedTrailerRecordId);
@@ -1262,8 +1342,8 @@ export async function applyAdminApplicationDecision(customerId, decisionInput = 
 			customerStatus: actionOutcome.customerStatus,
 			rentalStatus: actionOutcome.rentalStatus,
 			rentalId: targetRental.id,
-			trailerId: trailer.id,
-			assignmentRecordId,
+			trailerIds: trailers.map((trailer) => trailer.id),
+			assignmentRecordIds,
 			reviewedAt,
 		};
 	}
