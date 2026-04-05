@@ -40,7 +40,7 @@ export default function AdminRentalsPage() {
 					setError(
 						typeof json?.error === "string"
 							? json.error
-							: "Failed to load rentals.",
+							: "Failed to load rentals."
 					);
 					setLoading(false);
 					return;
@@ -101,10 +101,12 @@ export default function AdminRentalsPage() {
 								{rental.rentalId}
 							</p>
 						</div>
-						<div className="flex flex-col items-end gap-2">
-							<StatusBadge status={rental.billingStatus} />
+						<div className="flex flex-wrap items-center justify-end gap-2">
+							<StatusBadge status={rental.status} />
+							<StatusBadge status={rental.billingStatus || "Billing Pending"} />
 						</div>
 					</div>
+
 					<div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-sm text-neutral-600 dark:text-neutral-400">
 						<p>
 							<span className="font-semibold">Billing: </span>
@@ -122,18 +124,58 @@ export default function AdminRentalsPage() {
 							<span className="font-semibold">Current Period End: </span>
 							{formatDate(rental.currentPeriodEnd)}
 						</p>
+						<p>
+							<span className="font-semibold">Assignments: </span>
+							{rental.activeAssignmentCount ?? 0}
+						</p>
 					</div>
-					<p className="text-sm text-neutral-600 dark:text-neutral-400">
-						<span className="font-semibold">Trailers: </span>
-						{Array.isArray(rental.trailers) && rental.trailers.length
-							? rental.trailers
-									.map(
-										(trailer) =>
-											`${trailer.trailerType || "Trailer"} (${trailer.plateNumber || "No plate"})`,
-									)
-									.join(", ")
-							: "-"}
-					</p>
+
+					<div className="space-y-2 text-sm text-neutral-600 dark:text-neutral-400">
+						<p>
+							<span className="font-semibold">Trailers: </span>
+							{Array.isArray(rental.trailers) && rental.trailers.length
+								? rental.trailers
+										.map(
+											(trailer) =>
+												`${trailer.trailerType || "Trailer"} (${trailer.plateNumber || "No plate"})`,
+										)
+										.join(", ")
+								: "-"}
+						</p>
+
+						{Array.isArray(rental.assignments) && rental.assignments.length ? (
+							<div className="space-y-2">
+								<p className="font-semibold text-neutral-900 dark:text-neutral-100">
+									Assignment Timeline
+								</p>
+								{rental.assignments.map((assignment) => (
+									<div key={assignment.assignmentId} className="surface-subtle rounded-lg p-3">
+										<div className="flex flex-wrap items-center justify-between gap-2">
+											<p className="font-semibold text-neutral-900 dark:text-neutral-100">
+												{assignment.assignmentId}
+											</p>
+											<StatusBadge status={assignment.status} />
+										</div>
+										<p>
+											Start: {formatDate(assignment.startDate)} | End: {formatDate(assignment.endDate)}
+										</p>
+										<p>
+											Trailers: {Array.isArray(assignment.trailers) && assignment.trailers.length
+												? assignment.trailers
+														.map(
+															(trailer) =>
+																`${trailer.trailerType || "Trailer"} (${trailer.plateNumber || "No plate"})`,
+														)
+														.join(", ")
+												: "-"}
+										</p>
+									</div>
+								))}
+							</div>
+						) : (
+							<p>No active assignment timeline recorded.</p>
+						)}
+					</div>
 				</Card>
 			))}
 		</div>

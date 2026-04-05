@@ -373,19 +373,15 @@ export default function AdminApplicationsPage() {
 																Contract Start: {formatDate(rental.contractStartDate)}
 															</p>
 															<p>
-																Operational Start:{" "}
-																{formatDate(rental.operationalStartDate)}
+																Operational Start: {formatDate(rental.operationalStartDate)}
 															</p>
 															<p>Rate: {rental.rate ?? "-"}</p>
 															<p>Deposit: {rental.depositAmount ?? "-"}</p>
+															<p>Assignments: {rental.assignments?.length ?? 0}</p>
 															<p>
-																Trailers:{" "}
-																{rental.trailers?.length
+																Trailers: {rental.trailers?.length
 																	? rental.trailers
-																			.map(
-																				(trailer) =>
-																					`${trailer.trailerType || "Trailer"} (${trailer.plateNumber || "No plate"})`
-																			)
+																			.map((trailer) => `${trailer.trailerType || "Trailer"} (${trailer.plateNumber || "No plate"})`)
 																			.join(", ")
 																	: "-"}
 															</p>
@@ -408,9 +404,7 @@ export default function AdminApplicationsPage() {
 															key={document.id}
 															className="surface-subtle rounded-lg p-3"
 														>
-															<p className="font-semibold">
-																{document.type || "Document"}
-															</p>
+															<p className="font-semibold">{document.type || "Document"}</p>
 															<p>Category: {document.category || "-"}</p>
 															<p>Uploaded: {formatDate(document.uploadedAt)}</p>
 															{document.attachments?.[0]?.url ? (
@@ -434,6 +428,24 @@ export default function AdminApplicationsPage() {
 												)}
 											</div>
 										</div>
+
+										{details.conflicts?.length ? (
+											<div className="space-y-2">
+												<p className="font-semibold text-red-700 dark:text-red-400">
+													Current Assignment Conflicts
+												</p>
+												{details.conflicts.map((conflict, index) => (
+													<div
+														key={`${conflict.trailerRecordId}-${index}`}
+														className="rounded-lg border border-red-300 bg-red-50/70 dark:bg-red-950/30 p-3 text-sm"
+													>
+														<p className="font-semibold">{conflict.message}</p>
+														<p>Trailer: {conflict.trailerId || conflict.trailerRecordId}</p>
+														<p>Blocking Assignments: {conflict.assignments?.length ?? 0}</p>
+													</div>
+												))}
+											</div>
+										) : null}
 
 										<div className="space-y-3">
 											<FieldLabel>
@@ -469,8 +481,7 @@ export default function AdminApplicationsPage() {
 														<option value="">Select available trailer</option>
 														{details.availableTrailers?.map((trailer) => (
 															<option key={trailer.recordId} value={trailer.recordId}>
-																{trailer.trailerType || "Trailer"} |{" "}
-																{trailer.plateNumber || "No plate"} | {trailer.status}
+																{trailer.trailerType || "Trailer"} | {trailer.plateNumber || "No plate"} | {trailer.status}
 															</option>
 														))}
 													</select>
@@ -483,11 +494,7 @@ export default function AdminApplicationsPage() {
 														min="0"
 														value={draft.rate || ""}
 														onChange={(event) =>
-															updateDecisionDraft(
-																application.customerId,
-																"rate",
-																event.target.value
-															)
+															updateDecisionDraft(application.customerId, "rate", event.target.value)
 														}
 														className="w-full p-3 rounded-lg border border-(--border-soft) bg-neutral-50 dark:bg-neutral-900/40"
 														placeholder="475.00"
@@ -501,11 +508,7 @@ export default function AdminApplicationsPage() {
 														min="0"
 														value={draft.depositAmount || ""}
 														onChange={(event) =>
-															updateDecisionDraft(
-																application.customerId,
-																"depositAmount",
-																event.target.value
-															)
+															updateDecisionDraft(application.customerId, "depositAmount", event.target.value)
 														}
 														className="w-full p-3 rounded-lg border border-(--border-soft) bg-neutral-50 dark:bg-neutral-900/40"
 														placeholder="500.00"
@@ -517,11 +520,7 @@ export default function AdminApplicationsPage() {
 														type="date"
 														value={draft.contractStartDate || ""}
 														onChange={(event) =>
-															updateDecisionDraft(
-																application.customerId,
-																"contractStartDate",
-																event.target.value
-															)
+															updateDecisionDraft(application.customerId, "contractStartDate", event.target.value)
 														}
 														className="w-full p-3 rounded-lg border border-(--border-soft) bg-neutral-50 dark:bg-neutral-900/40"
 													/>
@@ -532,21 +531,40 @@ export default function AdminApplicationsPage() {
 														type="date"
 														value={draft.operationalStartDate || ""}
 														onChange={(event) =>
-															updateDecisionDraft(
-																application.customerId,
-																"operationalStartDate",
-																event.target.value
-															)
+															updateDecisionDraft(application.customerId, "operationalStartDate", event.target.value)
 														}
 														className="w-full p-3 rounded-lg border border-(--border-soft) bg-neutral-50 dark:bg-neutral-900/40"
 													/>
 												</FieldLabel>
 											</div>
 
-											{actionError ? (
-												<p className="text-sm text-red-600 font-medium">
-													{actionError}
+											<div className="space-y-2 text-sm">
+												<p className="font-semibold text-neutral-900 dark:text-neutral-100">
+													Assignment Timeline
 												</p>
+												{details.rentals?.some((rental) => rental.assignments?.length) ? (
+													details.rentals.flatMap((rental) =>
+														(rental.assignments || []).map((assignment) => (
+															<div key={assignment.assignmentId} className="surface-subtle rounded-lg p-3">
+																<p className="font-semibold">{rental.rentalId} | {assignment.status || "-"}</p>
+																<p>Start: {formatDate(assignment.startDate)} | End: {formatDate(assignment.endDate)}</p>
+																<p>
+																	Trailers: {assignment.trailers?.length
+																		? assignment.trailers
+																				.map((trailer) => `${trailer.trailerType || "Trailer"} (${trailer.plateNumber || "No plate"})`)
+																				.join(", ")
+																		: "-"}
+																</p>
+															</div>
+														))
+													)
+												) : (
+													<p className="text-neutral-600 dark:text-neutral-400">No assignments recorded yet.</p>
+												)}
+											</div>
+
+											{actionError ? (
+												<p className="text-sm text-red-600 font-medium">{actionError}</p>
 											) : null}
 
 											<div className="flex flex-wrap gap-2">
@@ -554,9 +572,7 @@ export default function AdminApplicationsPage() {
 													type="button"
 													tone="primary"
 													loading={Boolean(actionLoading)}
-													onClick={() =>
-														submitDecision(application.customerId, "approve")
-													}
+													onClick={() => submitDecision(application.customerId, "approve")}
 													disabled={!details.availableTrailers?.length}
 												>
 													Approve Application
@@ -564,9 +580,7 @@ export default function AdminApplicationsPage() {
 												<ActionButton
 													type="button"
 													loading={Boolean(actionLoading)}
-													onClick={() =>
-														submitDecision(application.customerId, "request_info")
-													}
+													onClick={() => submitDecision(application.customerId, "request_info")}
 												>
 													Request More Info
 												</ActionButton>
@@ -574,9 +588,7 @@ export default function AdminApplicationsPage() {
 													type="button"
 													tone="danger"
 													loading={Boolean(actionLoading)}
-													onClick={() =>
-														submitDecision(application.customerId, "deny")
-													}
+													onClick={() => submitDecision(application.customerId, "deny")}
 												>
 													Deny Application
 												</ActionButton>

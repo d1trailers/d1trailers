@@ -8,6 +8,13 @@ import { LoadingCardGrid, LoadingPanel } from "@/components/ui/LoadingSkeleton";
 
 const STATUS_ORDER = ["Available", "Reserved", "Rented", "Maintenance"];
 
+function formatDate(value) {
+	if (!value) return "-";
+	const date = new Date(value);
+	if (Number.isNaN(date.getTime())) return "-";
+	return date.toLocaleDateString();
+}
+
 export default function AdminInventoryPage() {
 	const [data, setData] = useState([]);
 	const [loading, setLoading] = useState(true);
@@ -89,10 +96,7 @@ export default function AdminInventoryPage() {
 			{STATUS_ORDER.map((status) => {
 				const trailers = grouped.get(status) ?? [];
 				return (
-					<Card
-						key={status}
-						className="motion-enter-delayed"
-					>
+					<Card key={status} className="motion-enter-delayed">
 						<div className="flex items-center justify-between">
 							<h2 className="font-syne text-xl font-bold text-neutral-950 dark:text-neutral-50">
 								{status}
@@ -106,21 +110,55 @@ export default function AdminInventoryPage() {
 								{trailers.map((trailer) => (
 									<div
 										key={trailer.trailerId}
-										className="surface-subtle rounded-lg p-3 flex flex-wrap items-center justify-between gap-3"
+										className="surface-subtle rounded-lg p-3 space-y-3"
 									>
-										<div>
-											<p className="font-semibold text-neutral-950 dark:text-neutral-50">
-												{trailer.trailerType || "Trailer"} |{" "}
-												{trailer.plateNumber || "No plate"}
-											</p>
-											<p className="text-sm text-neutral-600 dark:text-neutral-400">
-												VIN: {trailer.vin || "-"}
-											</p>
-											<p className="text-xs text-neutral-600 dark:text-neutral-400">
-												Active Assignments: {trailer.activeAssignmentCount ?? 0}
-											</p>
+										<div className="flex flex-wrap items-center justify-between gap-3">
+											<div>
+												<p className="font-semibold text-neutral-950 dark:text-neutral-50">
+													{trailer.trailerType || "Trailer"} | {trailer.plateNumber || "No plate"}
+												</p>
+												<p className="text-sm text-neutral-600 dark:text-neutral-400">
+													VIN: {trailer.vin || "-"}
+												</p>
+												<p className="text-xs text-neutral-600 dark:text-neutral-400">
+													Active Assignments: {trailer.activeAssignmentCount ?? 0}
+												</p>
+											</div>
+											<StatusBadge status={trailer.status} />
 										</div>
-										<StatusBadge status={trailer.status} />
+
+										{Array.isArray(trailer.assignments) && trailer.assignments.length ? (
+											<div className="space-y-2 text-sm text-neutral-600 dark:text-neutral-400">
+												<p className="font-semibold text-neutral-900 dark:text-neutral-100">
+													Current Assignment Coverage
+												</p>
+												{trailer.assignments.map((assignment) => (
+													<div
+														key={assignment.assignmentId}
+														className="rounded-lg border border-(--border-soft) bg-white/70 dark:bg-neutral-950/30 p-3"
+													>
+														<div className="flex flex-wrap items-center justify-between gap-2">
+															<p className="font-semibold text-neutral-900 dark:text-neutral-100">
+																{assignment.assignmentId}
+															</p>
+															<StatusBadge status={assignment.status} />
+														</div>
+														<p>
+															Start: {formatDate(assignment.startDate)} | End: {formatDate(assignment.endDate)}
+														</p>
+														<p>
+															Rentals: {Array.isArray(assignment.rentalIds) && assignment.rentalIds.length
+																? assignment.rentalIds.join(", ")
+																: "-"}
+														</p>
+													</div>
+												))}
+											</div>
+										) : (
+											<p className="text-sm text-neutral-600 dark:text-neutral-400">
+												No active assignments tied to this trailer.
+											</p>
+										)}
 									</div>
 								))}
 							</div>

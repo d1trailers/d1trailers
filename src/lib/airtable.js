@@ -132,6 +132,12 @@ function formulaOrFromStatuses(fieldName, statuses) {
 	return conditions.length === 1 ? conditions[0] : `OR(${conditions.join(",")})`;
 }
 
+function combineFormulasWithAnd(formulas) {
+	const safeFormulas = (Array.isArray(formulas) ? formulas : []).filter(Boolean);
+	if (!safeFormulas.length) return null;
+	return safeFormulas.length === 1 ? safeFormulas[0] : `AND(${safeFormulas.join(",")})`;
+}
+
 function normalizeAttachments(value) {
 	const attachments = Array.isArray(value) ? value : [];
 	return attachments
@@ -412,6 +418,18 @@ export async function getRentalsByStatuses(statuses) {
 	return records.map(normalizeRentalRecord);
 }
 
+export async function getRentalsByIds(rentalRecordIds) {
+	assertBase();
+	const filterByFormula = formulaOrFromRecordIds(rentalRecordIds);
+	if (!filterByFormula) return [];
+
+	const records = await base(AIRTABLE_SCHEMA.TABLES.RENTALS)
+		.select({ filterByFormula })
+		.all();
+
+	return records.map(normalizeRentalRecord);
+}
+
 export async function getTrailersByStatuses(statuses) {
 	assertBase();
 	const filterByFormula = formulaOrFromStatuses(
@@ -433,6 +451,33 @@ export async function getAssignmentsByStatuses(statuses) {
 		AIRTABLE_SCHEMA.FIELDS.ASSINGMENTS.STATUS,
 		statuses
 	);
+	if (!filterByFormula) return [];
+
+	const records = await base(AIRTABLE_SCHEMA.TABLES.ASSINGMENTS)
+		.select({ filterByFormula })
+		.all();
+
+	return records.map(normalizeAssignmentRecord);
+}
+
+export async function getAssignmentsByTrailerIds(
+	trailerRecordIds,
+	statuses = ACTIVE_ASSIGNMENT_STATUSES
+) {
+	assertBase();
+	const linkedTrailerFormula = formulaOrFindInLinkedField(
+		trailerRecordIds,
+		AIRTABLE_SCHEMA.FIELDS.ASSINGMENTS.TRAILER
+	);
+	const statusFormula = formulaOrFromStatuses(
+		AIRTABLE_SCHEMA.FIELDS.ASSINGMENTS.STATUS,
+		statuses
+	);
+	const filterByFormula = combineFormulasWithAnd([
+		linkedTrailerFormula,
+		statusFormula,
+	]);
+
 	if (!filterByFormula) return [];
 
 	const records = await base(AIRTABLE_SCHEMA.TABLES.ASSINGMENTS)
@@ -483,6 +528,12 @@ async function updateRecordById(tableName, recordId, fields) {
 	if (!Object.keys(sanitizedFields).length) return null;
 
 	return base(tableName).update(recordId, sanitizedFields);
+}
+
+async function createRecord(tableName, fields) {
+	assertBase();
+	const sanitizedFields = sanitizeFieldsForUpdate(fields);
+	return base(tableName).create(sanitizedFields);
 }
 
 export function buildPortalContract(
@@ -615,6 +666,7 @@ const APPLICATION_REVIEW_RENTAL_STATUSES = new Set([
 	"Submitted",
 	"Awaiting First Payment",
 ]);
+const ACTIVE_ASSIGNMENT_STATUSES = ["Active"];
 const RENTAL_STATUS_CANCELLED = "Cancelled ";
 
 const APPLICATION_DECISION_ACTIONS = {
@@ -677,26 +729,37 @@ function summarizeTrailersByStatus(trailers) {
 	}, {});
 }
 
-function enrichRentalsForAdmin(rentals, customers, trailers) {
+function enrichRentalsForAdmin(rentals, customers, trailers, assignments = []) {
 	const customersByRecordId = new Map(
 		customers.map((customer) => [customer.recordId, customer])
 	);
 	const trailersByRecordId = new Map(
 		trailers.map((trailer) => [trailer.recordId, trailer])
 	);
+	const assignmentsByRentalRecordId =
+		groupAssignmentsByRentalRecordId(assignments);
 
 	return rentals.map((rental) => {
 		const customerNames = rental.customerRecordIds
 			.map((recordId) => customersByRecordId.get(recordId)?.companyName)
 			.filter(Boolean);
 
-		const rentalTrailers = rental.trailerRecordIds
+		const rentalAssignments =
+			assignmentsByRentalRecordId.get(rental.recordId) ?? [];
+		const trailerRecordIds = Array.from(
+			new Set([
+				...rental.trailerRecordIds,
+				...rentalAssignments.flatMap((assignment) => assignment.trailerRecordIds),
+			])
+		);
+		const rentalTrailers = trailerRecordIds
 			.map((recordId) => trailersByRecordId.get(recordId))
 			.filter(Boolean)
 			.map(publicTrailerView);
 
 		return {
 			rentalId: rental.id,
+			recordId: rental.recordId,
 			customerName: customerNames[0] ?? "Unknown Customer",
 			status: rental.status,
 			billingFrequency: rental.billingFrequency,
@@ -705,6 +768,12 @@ function enrichRentalsForAdmin(rentals, customers, trailers) {
 			currentPeriodEnd: rental.currentPeriodEnd,
 			billingStatus: rental.billingStatus,
 			trailers: rentalTrailers,
+			assignments: rentalAssignments.map((assignment) =>
+				mapAdminAssignment(assignment, trailersByRecordId)
+			),
+			activeAssignmentCount: rentalAssignments.filter(
+				(assignment) => assignment.status === "Active"
+			).length,
 		};
 	});
 }
@@ -758,6 +827,69 @@ function groupAssignmentsByRentalRecordId(assignments) {
 	return assignmentsByRentalRecordId;
 }
 
+function groupAssignmentsByTrailerRecordId(assignments) {
+	const assignmentsByTrailerRecordId = new Map();
+
+	for (const assignment of assignments) {
+		for (const trailerRecordId of assignment.trailerRecordIds) {
+			const existing = assignmentsByTrailerRecordId.get(trailerRecordId) ?? [];
+			existing.push(assignment);
+			assignmentsByTrailerRecordId.set(trailerRecordId, existing);
+		}
+	}
+
+	return assignmentsByTrailerRecordId;
+}
+
+function normalizeTimelineDate(value) {
+	if (!value) return null;
+	const parsed = new Date(value);
+	return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function dateRangesOverlap(startA, endA, startB, endB) {
+	const normalizedStartA = normalizeTimelineDate(startA);
+	const normalizedStartB = normalizeTimelineDate(startB);
+
+	if (!normalizedStartA || !normalizedStartB) return true;
+
+	const normalizedEndA = normalizeTimelineDate(endA);
+	const normalizedEndB = normalizeTimelineDate(endB);
+	const effectiveEndA = normalizedEndA ?? new Date("9999-12-31T00:00:00.000Z");
+	const effectiveEndB = normalizedEndB ?? new Date("9999-12-31T00:00:00.000Z");
+
+	return normalizedStartA <= effectiveEndB && normalizedStartB <= effectiveEndA;
+}
+
+function findTrailerAssignmentConflicts(assignments, trailerRecordId, targetRentalRecordId, startDate, endDate) {
+	return (Array.isArray(assignments) ? assignments : []).filter((assignment) => {
+		if (!assignment.trailerRecordIds.includes(trailerRecordId)) return false;
+		if (assignment.rentalRecordIds.includes(targetRentalRecordId)) return false;
+		if (assignment.status !== "Active") return false;
+
+		return dateRangesOverlap(
+			assignment.startDate,
+			assignment.endDate,
+			startDate,
+			endDate
+		);
+	});
+}
+
+async function syncTrailerStatusForAvailability(trailerRecordId) {
+	if (!trailerRecordId) return;
+
+	const activeAssignments = await getAssignmentsByTrailerIds(
+		[trailerRecordId],
+		ACTIVE_ASSIGNMENT_STATUSES
+	);
+	const nextStatus = activeAssignments.length ? "Reserved" : "Available";
+
+	await updateRecordById(AIRTABLE_SCHEMA.TABLES.TRAILERS, trailerRecordId, {
+		[AIRTABLE_SCHEMA.FIELDS.TRAILERS.STATUS]: nextStatus,
+	});
+}
+
 function mapAdminTrailerOption(trailer) {
 	return {
 		recordId: trailer.recordId,
@@ -766,6 +898,21 @@ function mapAdminTrailerOption(trailer) {
 		plateNumber: trailer.plateNumber,
 		vin: trailer.vin,
 		status: trailer.status,
+	};
+}
+
+function mapAdminAssignment(assignment, trailersByRecordId) {
+	return {
+		assignmentId: assignment.id,
+		recordId: assignment.recordId,
+		startDate: assignment.startDate,
+		endDate: assignment.endDate,
+		status: assignment.status,
+		notes: assignment.notes,
+		trailers: assignment.trailerRecordIds
+			.map((recordId) => trailersByRecordId.get(recordId))
+			.filter(Boolean)
+			.map(mapAdminTrailerOption),
 	};
 }
 
@@ -814,6 +961,8 @@ export async function getAdminApplicationDetailsByCustomerId(customerId) {
 	const documentsByRentalRecordId = groupDocumentsByRentalRecordId(allDocuments);
 	const assignmentsByRentalRecordId =
 		groupAssignmentsByRentalRecordId(allAssignments);
+	const assignmentsByTrailerRecordId =
+		groupAssignmentsByTrailerRecordId(allAssignments);
 
 	const rentalsDetailed = rentals.map((rental) => {
 		const rentalAssignments =
@@ -843,20 +992,38 @@ export async function getAdminApplicationDetailsByCustomerId(customerId) {
 			currentPeriodEnd: rental.currentPeriodEnd,
 			billingStatus: rental.billingStatus,
 			trailers: trailersDetailed,
-			assignments: rentalAssignments.map((assignment) => ({
-				assignmentId: assignment.id,
-				startDate: assignment.startDate,
-				endDate: assignment.endDate,
-				status: assignment.status,
-				notes: assignment.notes,
-				trailers: assignment.trailerRecordIds
-					.map((recordId) => trailersByRecordId.get(recordId))
-					.filter(Boolean)
-					.map(mapAdminTrailerOption),
-			})),
+			assignments: rentalAssignments.map((assignment) =>
+				mapAdminAssignment(assignment, trailersByRecordId)
+			),
 			documents: documentsByRentalRecordId.get(rental.recordId) ?? [],
 		};
 	});
+
+	const conflicts = rentalsDetailed.flatMap((rental) =>
+		rental.trailers.flatMap((trailer) => {
+			const trailerAssignments =
+				assignmentsByTrailerRecordId.get(trailer.recordId) ?? [];
+			const blockingAssignments = trailerAssignments.filter(
+				(assignment) =>
+					assignment.status === "Active" &&
+					!assignment.rentalRecordIds.includes(rental.recordId)
+			);
+
+			if (!blockingAssignments.length) return [];
+
+			return [
+				{
+					rentalRecordId: rental.recordId,
+					trailerRecordId: trailer.recordId,
+					trailerId: trailer.trailerId,
+					message: `Trailer ${trailer.trailerId || trailer.recordId} is actively assigned to another rental.`,
+					assignments: blockingAssignments.map((assignment) =>
+						mapAdminAssignment(assignment, trailersByRecordId)
+					),
+				},
+			];
+		})
+	);
 
 	return {
 		customer: {
@@ -875,6 +1042,7 @@ export async function getAdminApplicationDetailsByCustomerId(customerId) {
 			.filter((document) => document.rentalRecordIds.length === 0)
 			.map(publicDocumentView),
 		availableTrailers: availableTrailers.map(mapAdminTrailerOption),
+		conflicts,
 	};
 }
 
@@ -997,12 +1165,32 @@ export async function applyAdminApplicationDecision(customerId, decisionInput = 
 			);
 		}
 
-		if (trailer.status !== "Available") {
+		const activeAssignmentsForTrailer = await getAssignmentsByTrailerIds([
+			trailerRecordId,
+		]);
+		const conflictingAssignments = findTrailerAssignmentConflicts(
+			activeAssignmentsForTrailer,
+			trailerRecordId,
+			targetRental.recordId,
+			contractStartDate,
+			targetRental.endDate
+		);
+
+		if (trailer.status !== "Available" || conflictingAssignments.length) {
+			const conflictReason = conflictingAssignments.length
+				? "it is already assigned to another active rental"
+				: `it is currently ${trailer.status || "unavailable"}`;
 			throw new ApplicationDecisionError(
 				"CONFLICT",
-				`Trailer ${trailer.id || trailer.recordId} is currently ${trailer.status || "unavailable"}.`
+				`Trailer ${trailer.id || trailer.recordId} cannot be assigned because ${conflictReason}.`
 			);
 		}
+
+		const activeAssignmentsForRental = (
+			await getAssignmentsByRentalIds([targetRental.recordId])
+		).filter((assignment) => assignment.status === "Active");
+		const existingActiveAssignment = activeAssignmentsForRental[0] ?? null;
+		const previousTrailerRecordIds = existingActiveAssignment?.trailerRecordIds ?? [];
 
 		const rentalUpdateFields = sanitizeFieldsForUpdate({
 			[AIRTABLE_SCHEMA.FIELDS.RENTALS.STATUS]: actionOutcome.rentalStatus,
@@ -1030,6 +1218,44 @@ export async function applyAdminApplicationDecision(customerId, decisionInput = 
 			[AIRTABLE_SCHEMA.FIELDS.TRAILERS.STATUS]: "Reserved",
 		});
 
+		let assignmentRecordId = existingActiveAssignment?.recordId ?? null;
+		if (existingActiveAssignment) {
+			await updateRecordById(
+				AIRTABLE_SCHEMA.TABLES.ASSINGMENTS,
+				existingActiveAssignment.recordId,
+				{
+					[AIRTABLE_SCHEMA.FIELDS.ASSINGMENTS.RENTAL]: [targetRental.recordId],
+					[AIRTABLE_SCHEMA.FIELDS.ASSINGMENTS.TRAILER]: [trailerRecordId],
+					[AIRTABLE_SCHEMA.FIELDS.ASSINGMENTS.START_DATE]: contractStartDate,
+					[AIRTABLE_SCHEMA.FIELDS.ASSINGMENTS.END_DATE]:
+						targetRental.endDate || undefined,
+					[AIRTABLE_SCHEMA.FIELDS.ASSINGMENTS.STATUS]: "Active",
+					[AIRTABLE_SCHEMA.FIELDS.ASSINGMENTS.NOTES]: reviewNotes || undefined,
+				}
+			);
+		} else {
+			const createdAssignment = await createRecord(
+				AIRTABLE_SCHEMA.TABLES.ASSINGMENTS,
+				{
+					[AIRTABLE_SCHEMA.FIELDS.ASSINGMENTS.RENTAL]: [targetRental.recordId],
+					[AIRTABLE_SCHEMA.FIELDS.ASSINGMENTS.TRAILER]: [trailerRecordId],
+					[AIRTABLE_SCHEMA.FIELDS.ASSINGMENTS.START_DATE]: contractStartDate,
+					[AIRTABLE_SCHEMA.FIELDS.ASSINGMENTS.END_DATE]:
+						targetRental.endDate || undefined,
+					[AIRTABLE_SCHEMA.FIELDS.ASSINGMENTS.STATUS]: "Active",
+					[AIRTABLE_SCHEMA.FIELDS.ASSINGMENTS.NOTES]: reviewNotes || undefined,
+				}
+			);
+			assignmentRecordId = createdAssignment.id;
+		}
+
+		const releasedTrailerRecordIds = previousTrailerRecordIds.filter(
+			(recordId) => recordId && recordId !== trailerRecordId
+		);
+		for (const releasedTrailerRecordId of releasedTrailerRecordIds) {
+			await syncTrailerStatusForAvailability(releasedTrailerRecordId);
+		}
+
 		return {
 			customerId: customer.id,
 			action,
@@ -1037,6 +1263,7 @@ export async function applyAdminApplicationDecision(customerId, decisionInput = 
 			rentalStatus: actionOutcome.rentalStatus,
 			rentalId: targetRental.id,
 			trailerId: trailer.id,
+			assignmentRecordId,
 			reviewedAt,
 		};
 	}
@@ -1045,11 +1272,26 @@ export async function applyAdminApplicationDecision(customerId, decisionInput = 
 		APPLICATION_REVIEW_RENTAL_STATUSES.has(rental.status)
 	);
 	const targetRentals = rentalsToUpdate.length ? rentalsToUpdate : rentals;
+	const targetRentalRecordIds = targetRentals.map((rental) => rental.recordId);
+	const activeAssignmentsForRentals = (
+		await getAssignmentsByRentalIds(targetRentalRecordIds)
+	).filter((assignment) => assignment.status === "Active");
+	const reservedTrailerRecordIds = Array.from(
+		new Set(activeAssignmentsForRentals.flatMap((assignment) => assignment.trailerRecordIds))
+	);
 
 	await Promise.all([
 		...targetRentals.map((rental) =>
 			updateRecordById(AIRTABLE_SCHEMA.TABLES.RENTALS, rental.recordId, {
 				[AIRTABLE_SCHEMA.FIELDS.RENTALS.STATUS]: actionOutcome.rentalStatus,
+				[AIRTABLE_SCHEMA.FIELDS.RENTALS.TRAILER]: [],
+			})
+		),
+		...activeAssignmentsForRentals.map((assignment) =>
+			updateRecordById(AIRTABLE_SCHEMA.TABLES.ASSINGMENTS, assignment.recordId, {
+				[AIRTABLE_SCHEMA.FIELDS.ASSINGMENTS.STATUS]: "Expired",
+				[AIRTABLE_SCHEMA.FIELDS.ASSINGMENTS.NOTES]:
+					reviewNotes || assignment.notes || undefined,
 			})
 		),
 		updateRecordById(
@@ -1058,6 +1300,10 @@ export async function applyAdminApplicationDecision(customerId, decisionInput = 
 			customerUpdateFields
 		),
 	]);
+
+	for (const trailerRecordId of reservedTrailerRecordIds) {
+		await syncTrailerStatusForAvailability(trailerRecordId);
+	}
 
 	return {
 		customerId: customer.id,
@@ -1073,12 +1319,17 @@ export async function getAdminRentalsData(
 	statuses = ADMIN_ACTIVE_RENTAL_STATUSES
 ) {
 	const rentals = await getRentalsByStatuses(statuses);
+	const rentalRecordIds = rentals.map((rental) => rental.recordId);
 
 	const customerRecordIds = Array.from(
 		new Set(rentals.flatMap((rental) => rental.customerRecordIds))
 	);
+	const assignments = await getAssignmentsByRentalIds(rentalRecordIds);
 	const trailerRecordIds = Array.from(
-		new Set(rentals.flatMap((rental) => rental.trailerRecordIds))
+		new Set([
+			...rentals.flatMap((rental) => rental.trailerRecordIds),
+			...assignments.flatMap((assignment) => assignment.trailerRecordIds),
+		])
 	);
 
 	const [customers, trailers] = await Promise.all([
@@ -1086,7 +1337,7 @@ export async function getAdminRentalsData(
 		getTrailersByIds(trailerRecordIds),
 	]);
 
-	return enrichRentalsForAdmin(rentals, customers, trailers);
+	return enrichRentalsForAdmin(rentals, customers, trailers, assignments);
 }
 
 export async function getAdminWatchlistData() {
@@ -1110,14 +1361,23 @@ export async function getAdminWatchlistData() {
 export async function getAdminInventoryData() {
 	const [trailers, activeAssignments] = await Promise.all([
 		getTrailersByStatuses(ADMIN_INVENTORY_TRAILER_STATUSES),
-		getAssignmentsByStatuses(["Active"]),
+		getAssignmentsByStatuses(ACTIVE_ASSIGNMENT_STATUSES),
 	]);
+
+	const activeRentalRecordIds = Array.from(
+		new Set(activeAssignments.flatMap((assignment) => assignment.rentalRecordIds))
+	);
+	const activeRentals = await getRentalsByIds(activeRentalRecordIds);
+	const rentalsByRecordId = new Map(
+		activeRentals.map((rental) => [rental.recordId, rental])
+	);
 
 	const activeAssignmentsByTrailerRecordId = new Map();
 	for (const assignment of activeAssignments) {
 		for (const trailerRecordId of assignment.trailerRecordIds) {
-			const current = activeAssignmentsByTrailerRecordId.get(trailerRecordId) ?? 0;
-			activeAssignmentsByTrailerRecordId.set(trailerRecordId, current + 1);
+			const current = activeAssignmentsByTrailerRecordId.get(trailerRecordId) ?? [];
+			current.push(assignment);
+			activeAssignmentsByTrailerRecordId.set(trailerRecordId, current);
 		}
 	}
 
@@ -1128,7 +1388,18 @@ export async function getAdminInventoryData() {
 		vin: trailer.vin,
 		status: trailer.status,
 		activeAssignmentCount:
-			activeAssignmentsByTrailerRecordId.get(trailer.recordId) ?? 0,
+			(activeAssignmentsByTrailerRecordId.get(trailer.recordId) ?? []).length,
+		assignments: (activeAssignmentsByTrailerRecordId.get(trailer.recordId) ?? []).map(
+			(assignment) => ({
+				assignmentId: assignment.id,
+				startDate: assignment.startDate,
+				endDate: assignment.endDate,
+				status: assignment.status,
+				rentalIds: assignment.rentalRecordIds
+					.map((recordId) => rentalsByRecordId.get(recordId)?.id)
+					.filter(Boolean),
+			})
+		),
 	}));
 }
 
