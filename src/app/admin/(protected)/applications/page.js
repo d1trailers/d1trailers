@@ -5,6 +5,7 @@ import Card from "@/components/ui/Card";
 import StateCard from "@/components/admin/StateCard";
 import StatusBadge from "@/components/admin/StatusBadge";
 import { LoadingCardGrid, LoadingPanel } from "@/components/ui/LoadingSkeleton";
+import { PlusIcon, XMarkIcon } from "@heroicons/react/20/solid";
 
 function formatDate(value) {
 	if (!value) return "-";
@@ -69,18 +70,15 @@ function FieldLabel({ children }) {
 	);
 }
 
-function ActionButton({
-	tone = "neutral",
-	loading = false,
-	children,
-	...props
-}) {
+function ActionButton({ tone, loading = false, children, ...props }) {
 	const toneClass =
 		tone === "danger"
 			? "bg-red-700 hover:bg-red-800 text-neutral-50"
-			: tone === "primary"
-				? "bg-(--branding-700) hover:bg-(--branding-800) text-neutral-50"
-				: "surface-subtle text-neutral-800 dark:text-neutral-100";
+			: tone === "positive"
+				? "bg-emerald-600 hover:bg-emerald-700 text-white"
+				: tone === "primary"
+					? "bg-(--branding-700) hover:bg-(--branding-800) text-neutral-50"
+					: "surface-subtle text-neutral-800 dark:text-neutral-100";
 
 	return (
 		<button
@@ -611,7 +609,7 @@ export default function AdminApplicationsPage() {
 														}
 														className="relative rounded-xl border border-(--border-soft) bg-neutral-50 dark:bg-neutral-900/40 px-3 py-3"
 													>
-														<div className="flex flex-wrap items-center gap-2">
+														<div className="flex flex-wrap items-center justify-center gap-2">
 															{selectedTrailers.length ? (
 																selectedTrailers.map((trailer) => (
 																	<button
@@ -624,7 +622,7 @@ export default function AdminApplicationsPage() {
 																				trailer.recordId,
 																			)
 																		}
-																		className="inline-flex items-center gap-2 rounded-full border border-(--border-soft) bg-white px-3 py-1.5 text-sm text-neutral-800 dark:bg-neutral-950 dark:text-neutral-100"
+																		className="inline-flex items-center justify-center gap-2 rounded-full border border-(--border-soft) bg-white px-3 py-1.5 text-sm text-neutral-800 dark:bg-neutral-950 dark:text-neutral-100"
 																	>
 																		<span>
 																			{trailer.trailerType || "Trailer"}
@@ -632,7 +630,9 @@ export default function AdminApplicationsPage() {
 																		<span className="text-neutral-500">
 																			{trailer.plateNumber || "No plate"}
 																		</span>
-																		<span className="text-red-600">x</span>
+																		<span className="text-neutral-400">
+																			<XMarkIcon className="h-4 w-4 ml-1" />
+																		</span>
 																	</button>
 																))
 															) : (
@@ -650,10 +650,10 @@ export default function AdminApplicationsPage() {
 																				: application.customerId,
 																		)
 																	}
-																	className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-(--branding-700) text-lg font-semibold text-neutral-50"
+																	className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-(--branding-700) hover:bg-(--branding-800) duration-300 text-neutral-50"
 																	aria-label="Add trailer"
 																>
-																	+
+																	<PlusIcon className="h-5 w-5" />
 																</button>
 																{trailerMenuCustomerId ===
 																application.customerId ? (
@@ -829,7 +829,7 @@ export default function AdminApplicationsPage() {
 											<div className="flex flex-wrap gap-2">
 												<ActionButton
 													type="button"
-													tone="primary"
+													tone="positive"
 													loading={Boolean(actionLoading)}
 													onClick={() =>
 														submitDecision(application.customerId, "approve")
@@ -837,6 +837,17 @@ export default function AdminApplicationsPage() {
 													disabled={!trailerCatalog.length}
 												>
 													Approve Application
+												</ActionButton>
+
+												<ActionButton
+													type="button"
+													tone="danger"
+													loading={Boolean(actionLoading)}
+													onClick={() =>
+														submitDecision(application.customerId, "deny")
+													}
+												>
+													Deny Application
 												</ActionButton>
 												<ActionButton
 													type="button"
@@ -849,16 +860,6 @@ export default function AdminApplicationsPage() {
 													}
 												>
 													Request More Info
-												</ActionButton>
-												<ActionButton
-													type="button"
-													tone="danger"
-													loading={Boolean(actionLoading)}
-													onClick={() =>
-														submitDecision(application.customerId, "deny")
-													}
-												>
-													Deny Application
 												</ActionButton>
 											</div>
 										</div>

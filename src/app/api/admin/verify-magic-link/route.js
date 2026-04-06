@@ -1,24 +1,53 @@
+import jwt from "jsonwebtoken";
 import { NextResponse } from "next/server";
 import {
 	createAdminSessionToken,
 	getAdminSessionCookieOptions,
 	getAdminVerifyRedirectUrl,
 	isAdminEmailAllowlisted,
-	verifyAdminMagicLinkToken,
 } from "@/lib/adminAuth";
+
+function getLoginExpiredRedirectUrl(req, reason = "expired") {
+	const baseUrl = process.env.NEXTAUTH_URL ?? req.url;
+	const url = new URL("/login/expired", baseUrl);
+	url.searchParams.set("reason", reason);
+	return url;
+}
+
+function getFailureReason(error) {
+	if (error?.name === "TokenExpiredError") {
+		return "expired";
+	}
+	return "invalid";
+}
 
 export async function GET(req) {
 	const { searchParams } = new URL(req.url);
 	const token = searchParams.get("token");
 
 	if (!token) {
-		return Response.json({ error: "Token required" }, { status: 400 });
+		return NextResponse.redirect(getLoginExpiredRedirectUrl(req, "missing"), {
+			status: 302,
+		});
+	}
+
+	const secret = process.env.NEXTAUTH_SECRET ?? "";
+	if (!secret) {
+		return Response.json({ error: "Server configuration error" }, { status: 500 });
 	}
 
 	try {
-		const email = verifyAdminMagicLinkToken(token);
-		if (!email || !isAdminEmailAllowlisted(email)) {
-			return Response.json({ error: "Invalid or expired token" }, { status: 403 });
+		const payload = jwt.verify(token, secret);
+		const email =
+			typeof payload === "object" && payload?.email
+				? String(payload.email).trim().toLowerCase()
+				: null;
+		const tokenType = typeof payload === "object" ? payload?.type : null;
+
+		if (!email || tokenType !== "admin-magic-link" || !isAdminEmailAllowlisted(email)) {
+			return NextResponse.redirect(getLoginExpiredRedirectUrl(req, "invalid"), {
+				status: 302,
+			});
 		}
 
 		const sessionToken = createAdminSessionToken(email);
@@ -33,7 +62,10 @@ export async function GET(req) {
 		});
 
 		return response;
-	} catch {
-		return Response.json({ error: "Invalid or expired token" }, { status: 403 });
+	} catch (error) {
+		return NextResponse.redirect(
+			getLoginExpiredRedirectUrl(req, getFailureReason(error)),
+			{ status: 302 }
+		);
 	}
 }

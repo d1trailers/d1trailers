@@ -65,6 +65,9 @@ export default function Login() {
 					<p className="text-sm text-neutral-600 dark:text-neutral-400">
 						Enter your email to receive a secure magic link.
 					</p>
+					<p className="text-xs text-neutral-500 dark:text-neutral-400">
+						Links expire automatically for security. Use the most recent email if an older link no longer works.
+					</p>
 				</section>
 
 				{!sent ? (

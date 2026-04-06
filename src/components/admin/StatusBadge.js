@@ -1,28 +1,37 @@
-export default function StatusBadge({
-	status,
-	asButton = false,
-	showChevron = false,
-	className = "",
-	children,
-	...props
-}) {
+import { forwardRef } from "react";
+import { ChevronDownIcon } from "@heroicons/react/20/solid";
+
+const StatusBadge = forwardRef(function StatusBadge(
+	{
+		status,
+		asButton = false,
+		showChevron = false,
+		className = "",
+		children,
+		...props
+	},
+	ref,
+) {
 	const value = status || "Unknown";
 	const toneClass = getStatusClassName(value);
 	const Component = asButton ? "button" : "span";
 
 	return (
 		<Component
+			ref={ref}
 			{...props}
 			className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold ${toneClass} ${
 				asButton ? "cursor-pointer transition-opacity hover:opacity-90" : ""
 			} ${className}`}
 		>
 			<span>{value}</span>
-			{showChevron ? <span aria-hidden="true" className="text-[10px] leading-none">v</span> : null}
+			{showChevron ? <ChevronDownIcon aria-hidden="true" className="size-3.5" /> : null}
 			{children}
 		</Component>
 	);
-}
+});
+
+export default StatusBadge;
 
 function getStatusClassName(status) {
 	const normalized = String(status).toLowerCase();

@@ -4,7 +4,12 @@ import { NextResponse } from "next/server";
 const DEFAULT_SESSION_AGE_SECONDS = 900;
 
 function getSessionMaxAgeSeconds() {
-	const value = Number.parseInt(process.env.EMAIL_MAX_AGE_SECONDS ?? "", 10);
+	const value = Number.parseInt(
+		process.env.PORTAL_SESSION_MAX_AGE_SECONDS ??
+			process.env.EMAIL_MAX_AGE_SECONDS ??
+			"",
+		10,
+	);
 	return Number.isFinite(value) && value > 0 ? value : DEFAULT_SESSION_AGE_SECONDS;
 }
 
@@ -15,12 +20,28 @@ function getPortalRedirectUrl(req) {
 	return new URL("/portal", req.url);
 }
 
+function getLoginExpiredRedirectUrl(req, reason = "expired") {
+	const baseUrl = process.env.NEXTAUTH_URL ?? req.url;
+	const url = new URL("/login/expired", baseUrl);
+	url.searchParams.set("reason", reason);
+	return url;
+}
+
+function getFailureReason(error) {
+	if (error?.name === "TokenExpiredError") {
+		return "expired";
+	}
+	return "invalid";
+}
+
 export async function GET(req) {
 	const { searchParams } = new URL(req.url);
 	const token = searchParams.get("token");
 
 	if (!token) {
-		return Response.json({ error: "Token required" }, { status: 400 });
+		return NextResponse.redirect(getLoginExpiredRedirectUrl(req, "missing"), {
+			status: 302,
+		});
 	}
 
 	if (!process.env.NEXTAUTH_SECRET) {
@@ -37,7 +58,9 @@ export async function GET(req) {
 			typeof payload === "object" && payload?.type ? payload.type : null;
 
 		if (!email || tokenType !== "magic-link") {
-			throw new Error("Invalid token payload");
+			return NextResponse.redirect(getLoginExpiredRedirectUrl(req, "invalid"), {
+				status: 302,
+			});
 		}
 
 		const maxAge = getSessionMaxAgeSeconds();
@@ -64,9 +87,10 @@ export async function GET(req) {
 		response.cookies.delete("email");
 
 		return response;
-	} catch {
-		return Response.json({ error: "Invalid or expired token" }, {
-			status: 403,
-		});
+	} catch (error) {
+		return NextResponse.redirect(
+			getLoginExpiredRedirectUrl(req, getFailureReason(error)),
+			{ status: 302 }
+		);
 	}
 }

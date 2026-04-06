@@ -7,7 +7,12 @@ import {
 const DEFAULT_MAGIC_LINK_AGE_SECONDS = 900;
 
 function getTokenMaxAgeSeconds() {
-	const value = Number.parseInt(process.env.EMAIL_MAX_AGE_SECONDS ?? "", 10);
+	const value = Number.parseInt(
+		process.env.PORTAL_MAGIC_LINK_MAX_AGE_SECONDS ??
+			process.env.EMAIL_MAX_AGE_SECONDS ??
+			"",
+		10,
+	);
 	return Number.isFinite(value) && value > 0
 		? value
 		: DEFAULT_MAGIC_LINK_AGE_SECONDS;

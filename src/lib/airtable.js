@@ -1,4 +1,5 @@
 import Airtable from "airtable";
+import { ensureStripeBillingRecords } from "@/lib/stripe";
 
 const PORTAL_ELIGIBLE_STATUSES = new Set(["Active", "Past Due", "Suspended"]);
 
@@ -1320,6 +1321,23 @@ export async function applyAdminApplicationDecision(customerId, decisionInput = 
 				activeAssignmentsForRental.flatMap((assignment) => assignment.trailerRecordIds)
 			)
 		);
+		let stripeProvisioning;
+		try {
+			stripeProvisioning = await ensureStripeBillingRecords({
+				customer,
+				rental: targetRental,
+				rate,
+				billingFrequency: targetRental.billingFrequency || "Monthly",
+				contractStartDate,
+			});
+		} catch (error) {
+			throw new ApplicationDecisionError(
+				"STRIPE",
+				error instanceof Error
+					? error.message
+					: "Failed to provision Stripe billing records."
+			);
+		}
 
 		const rentalUpdateFields = sanitizeFieldsForUpdate({
 			[AIRTABLE_SCHEMA.FIELDS.RENTALS.STATUS]: actionOutcome.rentalStatus,
@@ -1332,7 +1350,29 @@ export async function applyAdminApplicationDecision(customerId, decisionInput = 
 			[AIRTABLE_SCHEMA.FIELDS.RENTALS.END_DATE]: selectedEndDate || null,
 			[AIRTABLE_SCHEMA.FIELDS.RENTALS.BILLING_FREQUENCY]:
 				targetRental.billingFrequency || "Monthly",
+			[AIRTABLE_SCHEMA.FIELDS.RENTALS.STRIPE_PRODUCT_ID]:
+				stripeProvisioning.productId,
+			[AIRTABLE_SCHEMA.FIELDS.RENTALS.STRIPE_PRICE_ID]:
+				stripeProvisioning.priceId,
+			[AIRTABLE_SCHEMA.FIELDS.RENTALS.STRIPE_SUBSCRIPTION_ID]:
+				stripeProvisioning.subscriptionId,
+			[AIRTABLE_SCHEMA.FIELDS.RENTALS.CURRENT_PERIOD_END]:
+				stripeProvisioning.subscription?.current_period_end
+					? new Date(
+							stripeProvisioning.subscription.current_period_end * 1000
+					  )
+							.toISOString()
+							.slice(0, 10)
+					: undefined,
+			[AIRTABLE_SCHEMA.FIELDS.RENTALS.LAST_INVOICE_ID]:
+				stripeProvisioning.subscription?.latest_invoice || undefined,
+			[AIRTABLE_SCHEMA.FIELDS.RENTALS.BILLING_STATUS]:
+				stripeProvisioning.subscription?.status || undefined,
 		});
+		if (stripeProvisioning.stripeCustomerId) {
+			customerUpdateFields[AIRTABLE_SCHEMA.FIELDS.CUSTOMERS.STRIPE_CUSTOMER_ID] =
+				stripeProvisioning.stripeCustomerId;
+		}
 
 		await updateRecordById(
 			AIRTABLE_SCHEMA.TABLES.RENTALS,
@@ -1425,6 +1465,10 @@ export async function applyAdminApplicationDecision(customerId, decisionInput = 
 			rentalStatus: actionOutcome.rentalStatus,
 			rentalId: targetRental.id,
 			trailerIds: trailers.map((trailer) => trailer.id),
+			stripeCustomerId: stripeProvisioning.stripeCustomerId,
+			stripeProductId: stripeProvisioning.productId,
+			stripePriceId: stripeProvisioning.priceId,
+			stripeSubscriptionId: stripeProvisioning.subscriptionId,
 			assignmentRecordIds,
 			reviewedAt,
 		};
