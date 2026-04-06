@@ -1,4 +1,5 @@
 import Airtable from "airtable";
+import { composeCustomerNotes, parseCustomerNotes } from "@/lib/applicationNotes";
 import { ensureStripeBillingRecords } from "@/lib/stripe";
 
 const PORTAL_ELIGIBLE_STATUSES = new Set(["Active", "Past Due", "Suspended"]);
@@ -1190,7 +1191,10 @@ export async function applyAdminApplicationDecision(customerId, decisionInput = 
 	const customerUpdateFields = sanitizeFieldsForUpdate({
 		[AIRTABLE_SCHEMA.FIELDS.CUSTOMERS.STATUS]: actionOutcome.customerStatus,
 		[AIRTABLE_SCHEMA.FIELDS.CUSTOMERS.REVIEWED_AT]: reviewedAt,
-		[AIRTABLE_SCHEMA.FIELDS.CUSTOMERS.REVIEW_NOTES]: reviewNotes || null,
+		[AIRTABLE_SCHEMA.FIELDS.CUSTOMERS.REVIEW_NOTES]: composeCustomerNotes({
+			applicationIntakeSummary: parseCustomerNotes(customer.reviewNotes).applicationIntakeSummary,
+			reviewNotes: reviewNotes || parseCustomerNotes(customer.reviewNotes).reviewNotes || null,
+		}),
 	});
 
 	if (action === APPLICATION_DECISION_ACTIONS.APPROVE) {
@@ -1744,14 +1748,21 @@ export async function updateAdminEntityStatus({
 			);
 		}
 
+		const [customer] = await getCustomersByIds([normalizedRecordId]);
+		if (!customer) {
+			throw new ApplicationDecisionError("NOT_FOUND", "Customer record not found.");
+		}
+
 		await updateRecordById(
 			AIRTABLE_SCHEMA.TABLES.CUSTOMERS,
 			normalizedRecordId,
 			{
 				[AIRTABLE_SCHEMA.FIELDS.CUSTOMERS.STATUS]: normalizedNextStatus,
 				[AIRTABLE_SCHEMA.FIELDS.CUSTOMERS.REVIEWED_AT]: new Date().toISOString(),
-				[AIRTABLE_SCHEMA.FIELDS.CUSTOMERS.REVIEW_NOTES]:
-					normalizedReason || undefined,
+				[AIRTABLE_SCHEMA.FIELDS.CUSTOMERS.REVIEW_NOTES]: composeCustomerNotes({
+					applicationIntakeSummary: parseCustomerNotes(customer.reviewNotes).applicationIntakeSummary,
+					reviewNotes: normalizedReason || parseCustomerNotes(customer.reviewNotes).reviewNotes || null,
+				}),
 			}
 		);
 

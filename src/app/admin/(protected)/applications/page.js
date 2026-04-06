@@ -6,6 +6,7 @@ import StateCard from "@/components/admin/StateCard";
 import StatusBadge from "@/components/admin/StatusBadge";
 import { LoadingCardGrid, LoadingPanel } from "@/components/ui/LoadingSkeleton";
 import { PlusIcon, XMarkIcon } from "@heroicons/react/20/solid";
+import { parseCustomerNotes } from "@/lib/applicationNotes";
 
 function formatDate(value) {
 	if (!value) return "-";
@@ -52,7 +53,7 @@ function getDefaultDraft(details) {
 		: [];
 
 	return {
-		reviewNotes: details?.customer?.reviewNotes ?? "",
+		reviewNotes: parseCustomerNotes(details?.customer?.reviewNotes).reviewNotes ?? "",
 		trailerRecordIds: selectedTrailerRecordIds,
 		rate: toInputNumber(firstRental?.rate),
 		depositAmount: toInputNumber(firstRental?.depositAmount),
@@ -88,7 +89,7 @@ function ActionButton({ tone, loading = false, children, ...props }) {
 				props.className || ""
 			}`}
 		>
-			{loading ? "Working..." : children}
+			{loading ? "Working" : children}
 		</button>
 	);
 }
@@ -385,6 +386,8 @@ export default function AdminApplicationsPage() {
 				const draft = decisionDraftByCustomerId[application.customerId] || {};
 				const actionLoading = actionLoadingByCustomerId[application.customerId];
 				const actionError = actionErrorByCustomerId[application.customerId];
+				const applicationNotes = parseCustomerNotes(application.reviewNotes);
+				const detailNotes = parseCustomerNotes(details?.customer?.reviewNotes);
 				const trailerCatalog = (() => {
 					const trailers = [];
 					const seen = new Set();
@@ -437,14 +440,15 @@ export default function AdminApplicationsPage() {
 								{formatDate(application.reviewedAt)}
 							</p>
 						</div>
-						{application.reviewNotes ? (
+						{applicationNotes.reviewNotes ? (
 							<p className="text-sm text-neutral-700 dark:text-neutral-300">
 								<span className="font-semibold">Review Notes: </span>
-								{application.reviewNotes}
+								{applicationNotes.reviewNotes}
 							</p>
 						) : null}
 						<ActionButton
 							type="button"
+							className="w-full"
 							onClick={() => {
 								if (isExpanded) {
 									setExpandedCustomerId(null);
@@ -460,7 +464,7 @@ export default function AdminApplicationsPage() {
 							<div className="space-y-4 border-t border-(--border-soft) pt-4">
 								{detailLoading ? (
 									<p className="text-sm text-neutral-600 dark:text-neutral-400">
-										Loading application details...
+										Loading application details
 									</p>
 								) : null}
 								{detailError ? (
@@ -470,6 +474,16 @@ export default function AdminApplicationsPage() {
 								) : null}
 								{details && !detailLoading ? (
 									<>
+										{detailNotes.applicationIntakeSummary ? (
+											<div className="surface-subtle rounded-lg p-4 space-y-2">
+												<p className="font-semibold text-neutral-900 dark:text-neutral-100">
+													Application Intake Summary
+												</p>
+												<pre className="whitespace-pre-wrap text-sm text-neutral-700 dark:text-neutral-300 font-sans">
+													{detailNotes.applicationIntakeSummary}
+												</pre>
+											</div>
+										) : null}
 										<div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
 											<div className="space-y-2">
 												<p className="font-semibold text-neutral-900 dark:text-neutral-100">

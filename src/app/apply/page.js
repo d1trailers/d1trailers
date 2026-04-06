@@ -1,15 +1,24 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Card from "@/components/ui/Card";
 
 const REQUIRED_DOCS = [
-	"Utility Bill (1 of 2)",
-	"Utility Bill (2 of 2)",
-	"Driver License (Front)",
-	"Driver License (Back)",
-	"Tractor License Plate Photo",
+	{ name: "utilityBill1", label: "Utility Bill (1 of 2)" },
+	{ name: "utilityBill2", label: "Utility Bill (2 of 2)" },
+	{ name: "licenseFront", label: "Driver License (Front)" },
+	{ name: "licenseBack", label: "Driver License (Back)" },
+	{ name: "tractorPlate", label: "Tractor License Plate Photo" },
 ];
+
+function LoadingSpinner() {
+	return (
+		<span
+			className="inline-block h-5 w-5 animate-spin rounded-full border-2 border-neutral-50 border-t-transparent"
+			aria-hidden="true"
+		/>
+	);
+}
 
 export default function Apply() {
 	return (
@@ -33,172 +42,109 @@ export default function Apply() {
 }
 
 function Form() {
-	const [formData, setFormData] = useState({});
+	const formRef = useRef(null);
+	const [submitting, setSubmitting] = useState(false);
+	const [error, setError] = useState("");
+	const [success, setSuccess] = useState("");
 
 	const inputClass =
 		"w-full p-3 rounded-lg border border-(--border-soft) bg-neutral-50 dark:bg-neutral-900/40 text-neutral-950 dark:text-neutral-50 focus:outline-none focus:ring-2 focus:ring-(--branding-700)";
 
 	const sectionClass = "surface-panel rounded-2xl p-5 md:p-6 space-y-4";
 
-	const handleChange = (event) => {
-		const { name, value, type, files, checked } = event.target;
-		setFormData((current) => ({
-			...current,
-			[name]: type === "file" ? files : type === "checkbox" ? checked : value,
-		}));
-	};
-
-	const handleSubmit = (event) => {
+	async function handleSubmit(event) {
 		event.preventDefault();
-		console.log("Application Submitted:", formData);
-	};
+		setSubmitting(true);
+		setError("");
+		setSuccess("");
+
+		try {
+			const formData = new FormData(event.currentTarget);
+			const response = await fetch("/api/applications", {
+				method: "POST",
+				body: formData,
+			});
+			const json = await response.json().catch(() => ({}));
+
+			if (!response.ok) {
+				setError(
+					typeof json?.error === "string"
+						? json.error
+						: "Failed to submit application."
+				);
+				setSubmitting(false);
+				return;
+			}
+
+			formRef.current?.reset();
+			setSuccess(
+				"Application submitted. Our team can now review your intake and supporting documents in Airtable."
+			);
+			setSubmitting(false);
+		} catch {
+			setError("Failed to submit application.");
+			setSubmitting(false);
+		}
+	}
 
 	return (
 		<Card className="surface-panel w-full p-0 overflow-hidden">
-			<form onSubmit={handleSubmit} className="flex flex-col gap-5 p-5 md:p-8">
+			<form ref={formRef} onSubmit={handleSubmit} className="flex flex-col gap-5 p-5 md:p-8">
 				<section className={sectionClass}>
 					<SectionTitle title="Owner Information" />
 					<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-						<input
-							name="ownerFirstName"
-							placeholder="Principal Owner First Name"
-							className={inputClass}
-							required
-						/>
-						<input
-							name="ownerLastName"
-							placeholder="Principal Owner Last Name"
-							className={inputClass}
-							required
-						/>
-						<input
-							name="partnerFirstName"
-							placeholder="Partner First Name (optional)"
-							className={inputClass}
-						/>
-						<input
-							name="partnerLastName"
-							placeholder="Partner Last Name (optional)"
-							className={inputClass}
-						/>
+						<input name="ownerFirstName" placeholder="Principal Owner First Name" className={inputClass} required />
+						<input name="ownerLastName" placeholder="Principal Owner Last Name" className={inputClass} required />
+						<input name="partnerFirstName" placeholder="Partner First Name (optional)" className={inputClass} />
+						<input name="partnerLastName" placeholder="Partner Last Name (optional)" className={inputClass} />
 					</div>
 					<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-						<input
-							type="email"
-							name="email"
-							placeholder="Email"
-							className={inputClass}
-							required
-						/>
-						<input
-							name="phone"
-							placeholder="Phone"
-							className={inputClass}
-							required
-						/>
+						<input type="email" name="email" placeholder="Email" className={inputClass} required />
+						<input name="phone" placeholder="Phone" className={inputClass} required />
 					</div>
 				</section>
 
 				<section className={sectionClass}>
 					<SectionTitle title="Owner Address" />
-					<input
-						name="ownerAddress"
-						placeholder="Street Address"
-						className={inputClass}
-					/>
+					<input name="ownerAddress" placeholder="Street Address" className={inputClass} />
 					<div className="grid grid-cols-1 md:grid-cols-3 gap-4">
 						<input name="ownerCity" placeholder="City" className={inputClass} />
-						<input
-							name="ownerRegion"
-							placeholder="Country / Region"
-							className={inputClass}
-						/>
-						<input
-							name="ownerZip"
-							placeholder="Zip / Postal Code"
-							className={inputClass}
-						/>
+						<input name="ownerRegion" placeholder="Country / Region" className={inputClass} />
+						<input name="ownerZip" placeholder="Zip / Postal Code" className={inputClass} />
 					</div>
 				</section>
 
 				<section className={sectionClass}>
 					<SectionTitle title="Company Information" />
-					<input
-						name="companyName"
-						placeholder="Company Name *"
-						className={inputClass}
-						required
-					/>
-					<input
-						name="companyAddress"
-						placeholder="Street Address"
-						className={inputClass}
-					/>
+					<input name="companyName" placeholder="Company Name *" className={inputClass} required />
+					<input name="companyAddress" placeholder="Street Address" className={inputClass} />
 					<div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-						<input
-							name="companyCity"
-							placeholder="City"
-							className={inputClass}
-						/>
-						<input
-							name="companyRegion"
-							placeholder="Country / Region"
-							className={inputClass}
-						/>
-						<input
-							name="companyZip"
-							placeholder="Zip / Postal Code"
-							className={inputClass}
-						/>
+						<input name="companyCity" placeholder="City" className={inputClass} />
+						<input name="companyRegion" placeholder="Country / Region" className={inputClass} />
+						<input name="companyZip" placeholder="Zip / Postal Code" className={inputClass} />
 					</div>
 				</section>
 
 				<section className={sectionClass}>
 					<SectionTitle title="Compliance Details" />
 					<div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-						<input
-							name="ein"
-							placeholder="Federal Tax ID (EIN) *"
-							className={inputClass}
-							required
-						/>
-						<input
-							name="mcNumber"
-							placeholder="MC Number *"
-							className={inputClass}
-							required
-						/>
-						<input
-							name="usdot"
-							placeholder="USDOT Number *"
-							className={inputClass}
-							required
-						/>
+						<input name="ein" placeholder="Federal Tax ID (EIN) *" className={inputClass} required />
+						<input name="mcNumber" placeholder="MC Number *" className={inputClass} required />
+						<input name="usdot" placeholder="USDOT Number *" className={inputClass} required />
 					</div>
-					<input
-						name="rentalDuration"
-						placeholder="Duration of Rental *"
-						className={inputClass}
-						required
-					/>
+					<input name="rentalDuration" placeholder="Duration of Rental *" className={inputClass} required />
 				</section>
 
 				<section className={sectionClass}>
 					<SectionTitle title="Required Documents" />
+					<p className="text-xs text-neutral-600 dark:text-neutral-400">
+						Each file is uploaded directly into Airtable. Keep each attachment under 5 MB.
+					</p>
 					<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-						{REQUIRED_DOCS.map((label, index) => (
-							<label
-								key={label}
-								className="flex flex-col gap-1 text-sm text-neutral-700 dark:text-neutral-300"
-							>
-								<span>{label}</span>
-								<input
-									type="file"
-									name={`file_${index}`}
-									onChange={handleChange}
-									className={inputClass}
-									required
-								/>
+						{REQUIRED_DOCS.map((doc) => (
+							<label key={doc.name} className="flex flex-col gap-1 text-sm text-neutral-700 dark:text-neutral-300">
+								<span>{doc.label}</span>
+								<input type="file" name={doc.name} className={inputClass} required />
 							</label>
 						))}
 					</div>
@@ -208,20 +154,9 @@ function Form() {
 					<SectionTitle title="Personal References" />
 					<div className="grid grid-cols-1 gap-4">
 						{[1, 2, 3].map((number) => (
-							<div
-								key={number}
-								className="grid grid-cols-1 md:grid-cols-2 gap-4 surface-subtle rounded-xl p-3"
-							>
-								<input
-									name={`ref${number}Name`}
-									placeholder={`Reference ${number} Name`}
-									className={inputClass}
-								/>
-								<input
-									name={`ref${number}Phone`}
-									placeholder={`Reference ${number} Phone`}
-									className={inputClass}
-								/>
+							<div key={number} className="grid grid-cols-1 md:grid-cols-2 gap-4 surface-subtle rounded-xl p-3">
+								<input name={`ref${number}Name`} placeholder={`Reference ${number} Name`} className={inputClass} />
+								<input name={`ref${number}Phone`} placeholder={`Reference ${number} Phone`} className={inputClass} />
 							</div>
 						))}
 					</div>
@@ -229,12 +164,7 @@ function Form() {
 
 				<section className={sectionClass}>
 					<SectionTitle title="Identity Verification" />
-					<input
-						name="ssn"
-						placeholder="Social Security Number *"
-						className={inputClass}
-						required
-					/>
+					<input name="ssn" placeholder="Social Security Number *" className={inputClass} required />
 					<p className="text-xs text-neutral-600 dark:text-neutral-400 leading-relaxed">
 						Your SSN is collected for identity verification and is not used for
 						credit approval.
@@ -261,11 +191,22 @@ function Form() {
 					</div>
 				</section>
 
+				{error ? <p className="text-sm font-medium text-red-600">{error}</p> : null}
+				{success ? <p className="text-sm font-medium text-emerald-600">{success}</p> : null}
+
 				<button
 					type="submit"
-					className="mt-2 rounded-xl bg-(--branding-700) hover:bg-(--branding-800) transition-colors text-neutral-50 py-4 font-bold text-base md:text-lg"
+					disabled={submitting}
+					className="mt-2 rounded-xl bg-(--branding-700) hover:bg-(--branding-800) transition-colors text-neutral-50 py-4 font-bold text-base md:text-lg flex items-center justify-center disabled:opacity-60"
 				>
-					Submit Application
+					{submitting ? (
+						<>
+							<LoadingSpinner />
+							<span className="sr-only">Submitting application</span>
+						</>
+					) : (
+						"Submit Application"
+					)}
 				</button>
 			</form>
 		</Card>
