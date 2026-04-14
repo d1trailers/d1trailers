@@ -436,6 +436,63 @@ export async function getRentalsByIds(rentalRecordIds) {
 	return records.map(normalizeRentalRecord);
 }
 
+export async function getCustomerByStripeCustomerId(stripeCustomerId) {
+	assertBase();
+	const normalizedStripeCustomerId =
+		typeof stripeCustomerId === "string" ? stripeCustomerId.trim() : "";
+	if (!normalizedStripeCustomerId) return null;
+
+	const records = await base(AIRTABLE_SCHEMA.TABLES.CUSTOMERS)
+		.select({
+			filterByFormula: `{${AIRTABLE_SCHEMA.FIELDS.CUSTOMERS.STRIPE_CUSTOMER_ID}} = '${escapeFormulaValue(
+				normalizedStripeCustomerId
+			)}'`,
+			maxRecords: 1,
+		})
+		.firstPage();
+
+	if (!records.length) return null;
+	return normalizeCustomerRecord(records[0]);
+}
+
+export async function getRentalByStripeSubscriptionId(stripeSubscriptionId) {
+	assertBase();
+	const normalizedStripeSubscriptionId =
+		typeof stripeSubscriptionId === "string" ? stripeSubscriptionId.trim() : "";
+	if (!normalizedStripeSubscriptionId) return null;
+
+	const records = await base(AIRTABLE_SCHEMA.TABLES.RENTALS)
+		.select({
+			filterByFormula: `{${AIRTABLE_SCHEMA.FIELDS.RENTALS.STRIPE_SUBSCRIPTION_ID}} = '${escapeFormulaValue(
+				normalizedStripeSubscriptionId
+			)}'`,
+			maxRecords: 1,
+		})
+		.firstPage();
+
+	if (!records.length) return null;
+	return normalizeRentalRecord(records[0]);
+}
+
+export async function getRentalByLastInvoiceId(lastInvoiceId) {
+	assertBase();
+	const normalizedLastInvoiceId =
+		typeof lastInvoiceId === "string" ? lastInvoiceId.trim() : "";
+	if (!normalizedLastInvoiceId) return null;
+
+	const records = await base(AIRTABLE_SCHEMA.TABLES.RENTALS)
+		.select({
+			filterByFormula: `{${AIRTABLE_SCHEMA.FIELDS.RENTALS.LAST_INVOICE_ID}} = '${escapeFormulaValue(
+				normalizedLastInvoiceId
+			)}'`,
+			maxRecords: 1,
+		})
+		.firstPage();
+
+	if (!records.length) return null;
+	return normalizeRentalRecord(records[0]);
+}
+
 export async function getTrailersByStatuses(statuses) {
 	assertBase();
 	const filterByFormula = formulaOrFromStatuses(
@@ -815,6 +872,144 @@ function normalizeBillingStatusValue(value) {
 			return "Draft";
 		default:
 			return null;
+	}
+}
+
+function normalizeDateOnlyFromUnixTimestamp(value) {
+	if (typeof value !== "number" || !Number.isFinite(value)) return null;
+	return new Date(value * 1000).toISOString().slice(0, 10);
+}
+
+function extractStripeObject(eventPayload) {
+	return typeof eventPayload?.data?.object === "object" && eventPayload?.data?.object
+		? eventPayload.data.object
+		: null;
+}
+
+function extractStripeSubscriptionId(stripeObject) {
+	if (!stripeObject || typeof stripeObject !== "object") return null;
+	if (typeof stripeObject.subscription === "string" && stripeObject.subscription.trim()) {
+		return stripeObject.subscription.trim();
+	}
+	if (typeof stripeObject.id === "string" && stripeObject.object === "subscription") {
+		return stripeObject.id.trim();
+	}
+	if (
+		typeof stripeObject.subscription?.id === "string" &&
+		stripeObject.subscription.id.trim()
+	) {
+		return stripeObject.subscription.id.trim();
+	}
+	return null;
+}
+
+function extractStripeInvoiceId(stripeObject) {
+	if (!stripeObject || typeof stripeObject !== "object") return null;
+	if (typeof stripeObject.id === "string" && stripeObject.object === "invoice") {
+		return stripeObject.id.trim();
+	}
+	if (typeof stripeObject.latest_invoice === "string" && stripeObject.latest_invoice.trim()) {
+		return stripeObject.latest_invoice.trim();
+	}
+	if (
+		typeof stripeObject.latest_invoice?.id === "string" &&
+		stripeObject.latest_invoice.id.trim()
+	) {
+		return stripeObject.latest_invoice.id.trim();
+	}
+	return null;
+}
+
+function extractStripeCustomerId(stripeObject) {
+	if (!stripeObject || typeof stripeObject !== "object") return null;
+	if (typeof stripeObject.customer === "string" && stripeObject.customer.trim()) {
+		return stripeObject.customer.trim();
+	}
+	if (typeof stripeObject.customer_details?.email === "string") {
+		return null;
+	}
+	return null;
+}
+
+function extractStripeCurrentPeriodEnd(stripeObject) {
+	if (!stripeObject || typeof stripeObject !== "object") return null;
+	if (typeof stripeObject.current_period_end === "number") {
+		return normalizeDateOnlyFromUnixTimestamp(stripeObject.current_period_end);
+	}
+	if (typeof stripeObject.period_end === "number") {
+		return normalizeDateOnlyFromUnixTimestamp(stripeObject.period_end);
+	}
+	const linePeriodEnd = stripeObject.lines?.data?.[0]?.period?.end;
+	if (typeof linePeriodEnd === "number") {
+		return normalizeDateOnlyFromUnixTimestamp(linePeriodEnd);
+	}
+	return null;
+}
+
+async function getOperationalTrailerRecordIdsForRental(rental) {
+	const rentalAssignments = (
+		await getAssignmentsByRentalIds([rental.recordId])
+	).filter((assignment) => assignment.status === "Active");
+	return Array.from(
+		new Set([
+			...rental.trailerRecordIds,
+			...rentalAssignments.flatMap((assignment) => assignment.trailerRecordIds),
+		])
+	);
+}
+
+async function updateTrailerStatusesForRental(rental, nextStatus) {
+	const trailerRecordIds = await getOperationalTrailerRecordIdsForRental(rental);
+	for (const trailerRecordId of trailerRecordIds) {
+		await updateRecordById(AIRTABLE_SCHEMA.TABLES.TRAILERS, trailerRecordId, {
+			[AIRTABLE_SCHEMA.FIELDS.TRAILERS.STATUS]: nextStatus,
+		});
+	}
+	return trailerRecordIds;
+}
+
+async function applyBillingUpdateToRental({
+	rental,
+	customer,
+	billingStatus,
+	rentalStatus,
+	customerStatus,
+	currentPeriodEnd,
+	lastInvoiceId,
+	releaseTrailers = false,
+	setTrailersToRented = false,
+}) {
+	const rentalUpdateFields = sanitizeFieldsForUpdate({
+		[AIRTABLE_SCHEMA.FIELDS.RENTALS.BILLING_STATUS]: billingStatus || undefined,
+		[AIRTABLE_SCHEMA.FIELDS.RENTALS.CURRENT_PERIOD_END]: currentPeriodEnd || undefined,
+		[AIRTABLE_SCHEMA.FIELDS.RENTALS.LAST_INVOICE_ID]: lastInvoiceId || undefined,
+		[AIRTABLE_SCHEMA.FIELDS.RENTALS.STATUS]: rentalStatus || undefined,
+	});
+
+	await updateRecordById(
+		AIRTABLE_SCHEMA.TABLES.RENTALS,
+		rental.recordId,
+		rentalUpdateFields
+	);
+
+	if (customer?.recordId && customerStatus) {
+		await updateRecordById(AIRTABLE_SCHEMA.TABLES.CUSTOMERS, customer.recordId, {
+			[AIRTABLE_SCHEMA.FIELDS.CUSTOMERS.STATUS]: customerStatus,
+		});
+	}
+
+	if (releaseTrailers) {
+		await updateRecordById(AIRTABLE_SCHEMA.TABLES.RENTALS, rental.recordId, {
+			[AIRTABLE_SCHEMA.FIELDS.RENTALS.TRAILER]: [],
+		});
+		await expireAssignmentsByRentalRecordId(
+			rental.recordId,
+			"Released from Stripe billing lifecycle event."
+		);
+	}
+
+	if (setTrailersToRented) {
+		await updateTrailerStatusesForRental(rental, "Rented");
 	}
 }
 
@@ -1966,6 +2161,213 @@ export async function updateAdminEntityStatus({
 		"VALIDATION",
 		"Entity type must be customer, rental, or trailer."
 	);
+}
+
+function mapCustomerStatusFromBillingStatus(billingStatus, fallbackStatus) {
+	switch (billingStatus) {
+		case "Active":
+			return "Active";
+		case "Past Due":
+			return "Past Due";
+		case "Suspended":
+		case "Unpaid":
+		case "Cancelled":
+			return "Suspended";
+		case "Awaiting First Payment":
+		case "Draft":
+			return "Awaiting Payment";
+		default:
+			return fallbackStatus || null;
+	}
+}
+
+function mapRentalStatusFromBillingStatus(billingStatus, currentRentalStatus) {
+	switch (billingStatus) {
+		case "Active":
+			return "Active";
+		case "Past Due":
+		case "Unpaid":
+			return "Overdue";
+		case "Suspended":
+			return currentRentalStatus === "Awaiting First Payment"
+				? "Awaiting First Payment"
+				: "Overdue";
+		case "Awaiting First Payment":
+		case "Draft":
+			return "Awaiting First Payment";
+		case "Cancelled":
+			return "Cancelled";
+		default:
+			return currentRentalStatus || null;
+	}
+}
+
+async function resolveStripeWebhookTargets(stripeObject) {
+	const subscriptionId = extractStripeSubscriptionId(stripeObject);
+	const invoiceId = extractStripeInvoiceId(stripeObject);
+	const stripeCustomerId = extractStripeCustomerId(stripeObject);
+
+	let rental = null;
+	if (subscriptionId) {
+		rental = await getRentalByStripeSubscriptionId(subscriptionId);
+	}
+	if (!rental && invoiceId) {
+		rental = await getRentalByLastInvoiceId(invoiceId);
+	}
+
+	let customer = null;
+	if (rental?.customerRecordIds?.length) {
+		[customer] = await getCustomersByIds(rental.customerRecordIds);
+	}
+	if (!customer && stripeCustomerId) {
+		customer = await getCustomerByStripeCustomerId(stripeCustomerId);
+	}
+
+	return {
+		rental,
+		customer,
+		subscriptionId,
+		invoiceId,
+		stripeCustomerId,
+	};
+}
+
+export async function applyStripeWebhookEvent(eventPayload = {}) {
+	const eventType =
+		typeof eventPayload?.type === "string" ? eventPayload.type.trim() : "";
+	const stripeObject = extractStripeObject(eventPayload);
+
+	if (!eventType) {
+		throw new Error("Stripe webhook event type is required.");
+	}
+
+	if (!stripeObject) {
+		throw new Error("Stripe webhook payload must include data.object.");
+	}
+
+	const { rental, customer, subscriptionId, invoiceId, stripeCustomerId } =
+		await resolveStripeWebhookTargets(stripeObject);
+
+	if (!rental) {
+		return {
+			handled: false,
+			eventType,
+			reason: "No matching rental record was found for the Stripe event.",
+			subscriptionId,
+			invoiceId,
+			stripeCustomerId,
+		};
+	}
+
+	const currentPeriodEnd =
+		extractStripeCurrentPeriodEnd(stripeObject) || rental.currentPeriodEnd || null;
+	const resolvedInvoiceId = invoiceId || rental.stripe?.lastInvoiceId || null;
+
+	if (eventType === "invoice.paid" || eventType === "checkout.session.completed") {
+		await applyBillingUpdateToRental({
+			rental,
+			customer,
+			billingStatus: "Active",
+			rentalStatus: "Active",
+			customerStatus: "Active",
+			currentPeriodEnd,
+			lastInvoiceId: resolvedInvoiceId,
+			setTrailersToRented: true,
+		});
+
+		return {
+			handled: true,
+			eventType,
+			rentalId: rental.id,
+			customerId: customer?.id || null,
+			billingStatus: "Active",
+		};
+	}
+
+	if (eventType === "invoice.payment_failed") {
+		const billingStatus = "Past Due";
+		await applyBillingUpdateToRental({
+			rental,
+			customer,
+			billingStatus,
+			rentalStatus: "Overdue",
+			customerStatus: "Past Due",
+			currentPeriodEnd,
+			lastInvoiceId: resolvedInvoiceId,
+		});
+
+		return {
+			handled: true,
+			eventType,
+			rentalId: rental.id,
+			customerId: customer?.id || null,
+			billingStatus,
+		};
+	}
+
+	if (eventType === "customer.subscription.updated") {
+		const billingStatus =
+			normalizeBillingStatusValue(stripeObject.status) ||
+			rental.billingStatus ||
+			"Draft";
+		const nextRentalStatus = mapRentalStatusFromBillingStatus(
+			billingStatus,
+			rental.status
+		);
+		const nextCustomerStatus = mapCustomerStatusFromBillingStatus(
+			billingStatus,
+			customer?.status
+		);
+
+		await applyBillingUpdateToRental({
+			rental,
+			customer,
+			billingStatus,
+			rentalStatus: nextRentalStatus,
+			customerStatus: nextCustomerStatus,
+			currentPeriodEnd,
+			lastInvoiceId: resolvedInvoiceId,
+			releaseTrailers: billingStatus === "Cancelled",
+			setTrailersToRented: billingStatus === "Active",
+		});
+
+		return {
+			handled: true,
+			eventType,
+			rentalId: rental.id,
+			customerId: customer?.id || null,
+			billingStatus,
+		};
+	}
+
+	if (eventType === "customer.subscription.deleted") {
+		await applyBillingUpdateToRental({
+			rental,
+			customer,
+			billingStatus: "Cancelled",
+			rentalStatus: "Cancelled",
+			customerStatus: "Suspended",
+			currentPeriodEnd,
+			lastInvoiceId: resolvedInvoiceId,
+			releaseTrailers: true,
+		});
+
+		return {
+			handled: true,
+			eventType,
+			rentalId: rental.id,
+			customerId: customer?.id || null,
+			billingStatus: "Cancelled",
+		};
+	}
+
+	return {
+		handled: false,
+		eventType,
+		reason: "Stripe event type is not yet mapped to an Airtable sync action.",
+		rentalId: rental.id,
+		customerId: customer?.id || null,
+	};
 }
 
 export async function getPortalDataByEmail(email) {

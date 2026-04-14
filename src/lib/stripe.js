@@ -1,3 +1,5 @@
+import crypto from "crypto";
+
 const STRIPE_API_BASE = "https://api.stripe.com/v1";
 const DEFAULT_CURRENCY = (process.env.STRIPE_DEFAULT_CURRENCY || "usd").toLowerCase();
 const STRIPE_TEMPORARILY_DISABLED_MESSAGE =
@@ -97,6 +99,92 @@ function buildDisabledStripeResponse(action, preview, extra = {}) {
 		disabledReason: STRIPE_TEMPORARILY_DISABLED_MESSAGE,
 		preview,
 		...extra,
+	};
+}
+
+function getStripeWebhookSecret() {
+	return String(process.env.STRIPE_WEBHOOK_SECRET || "").trim();
+}
+
+function getStripeWebhookToleranceSeconds() {
+	const parsed = Number.parseInt(
+		process.env.STRIPE_WEBHOOK_TOLERANCE_SECONDS || "",
+		10
+	);
+	return Number.isFinite(parsed) && parsed > 0 ? parsed : 300;
+}
+
+function timingSafeCompare(left, right) {
+	const leftBuffer = Buffer.from(String(left || ""), "utf8");
+	const rightBuffer = Buffer.from(String(right || ""), "utf8");
+	if (leftBuffer.length !== rightBuffer.length) return false;
+	return crypto.timingSafeEqual(leftBuffer, rightBuffer);
+}
+
+export function verifyStripeWebhookSignature(payload, signatureHeader) {
+	const webhookSecret = getStripeWebhookSecret();
+	if (!webhookSecret) {
+		return {
+			verified: false,
+			mode: "disabled",
+			reason: "missing_webhook_secret",
+		};
+	}
+
+	if (!signatureHeader) {
+		return {
+			verified: false,
+			mode: "required",
+			reason: "missing_signature_header",
+		};
+	}
+
+	const components = Object.fromEntries(
+		String(signatureHeader)
+			.split(",")
+			.map((segment) => segment.trim())
+			.filter(Boolean)
+			.map((segment) => {
+				const separatorIndex = segment.indexOf("=");
+				if (separatorIndex === -1) return [segment, ""];
+				return [
+					segment.slice(0, separatorIndex),
+					segment.slice(separatorIndex + 1),
+				];
+			})
+	);
+
+	const timestamp = Number.parseInt(components.t || "", 10);
+	const signature = components.v1 || "";
+	if (!Number.isFinite(timestamp) || !signature) {
+		return {
+			verified: false,
+			mode: "required",
+			reason: "malformed_signature_header",
+		};
+	}
+
+	const ageSeconds = Math.abs(Math.floor(Date.now() / 1000) - timestamp);
+	if (ageSeconds > getStripeWebhookToleranceSeconds()) {
+		return {
+			verified: false,
+			mode: "required",
+			reason: "signature_timestamp_out_of_tolerance",
+		};
+	}
+
+	const signedPayload = `${timestamp}.${payload}`;
+	const expectedSignature = crypto
+		.createHmac("sha256", webhookSecret)
+		.update(signedPayload, "utf8")
+		.digest("hex");
+
+	return {
+		verified: timingSafeCompare(expectedSignature, signature),
+		mode: "required",
+		reason: timingSafeCompare(expectedSignature, signature)
+			? null
+			: "signature_mismatch",
 	};
 }
 
