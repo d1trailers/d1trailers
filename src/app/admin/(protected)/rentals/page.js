@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Card from "@/components/ui/Card";
+import PaymentLinkAction from "@/components/admin/PaymentLinkAction";
 import StateCard from "@/components/admin/StateCard";
 import StatusBadge from "@/components/admin/StatusBadge";
 import StatusChangeControl from "@/components/admin/StatusChangeControl";
@@ -207,6 +208,23 @@ export default function AdminRentalsPage() {
 							<p>No active assignment timeline recorded.</p>
 						)}
 					</div>
+
+					{rental.status === "Awaiting First Payment" ||
+					rental.status === "Overdue" ? (
+						<div className="pt-1">
+							<p className="mb-2 text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+								Payment Actions
+							</p>
+							<PaymentLinkAction
+								rentalRecordId={rental.recordId}
+								label={
+									rental.status === "Overdue"
+										? "Regenerate Payment Link"
+										: "Create Payment Link"
+								}
+							/>
+						</div>
+					) : null}
 				</Card>
 			))}
 		</div>

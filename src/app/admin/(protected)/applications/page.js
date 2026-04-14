@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Card from "@/components/ui/Card";
 import StateCard from "@/components/admin/StateCard";
+import PaymentLinkAction from "@/components/admin/PaymentLinkAction";
 import StatusBadge from "@/components/admin/StatusBadge";
 import { LoadingCardGrid, LoadingPanel } from "@/components/ui/LoadingSkeleton";
 import { PlusIcon, XMarkIcon } from "@heroicons/react/20/solid";
@@ -415,6 +416,12 @@ export default function AdminApplicationsPage() {
 					(trailer) =>
 						!(draft.trailerRecordIds || []).includes(trailer.recordId),
 				);
+				const paymentLinkRental =
+					(details?.rentals || []).find(
+						(rental) =>
+							rental.status === "Awaiting First Payment" ||
+							rental.status === "Overdue",
+					) ?? null;
 
 				return (
 					<Card key={application.customerId} className="motion-enter-delayed">
@@ -899,6 +906,21 @@ export default function AdminApplicationsPage() {
 													Request More Info
 												</ActionButton>
 											</div>
+											{paymentLinkRental ? (
+												<div className="pt-2">
+													<p className="mb-2 text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+														Payment Activation
+													</p>
+													<PaymentLinkAction
+														rentalRecordId={paymentLinkRental.recordId}
+														label={
+															paymentLinkRental.status === "Overdue"
+																? "Regenerate Payment Link"
+																: "Create Payment Link"
+														}
+													/>
+												</div>
+											) : null}
 										</div>
 									</>
 								) : null}

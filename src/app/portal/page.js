@@ -34,6 +34,9 @@ export default function Portal() {
 	const [data, setData] = useState(null);
 	const [error, setError] = useState("");
 	const [loading, setLoading] = useState(true);
+	const [billingActionLoading, setBillingActionLoading] = useState("");
+	const [billingActionMessage, setBillingActionMessage] = useState("");
+	const [billingActionTone, setBillingActionTone] = useState("muted");
 
 	useEffect(() => {
 		let mounted = true;
@@ -103,6 +106,60 @@ export default function Portal() {
 	const activeRentals = rentals.filter((rental) => rental?.status === "Active");
 	const billingRental = activeRentals[0] ?? rentals[0] ?? null;
 
+	async function runBillingAction(action) {
+		if (!action) return;
+
+		setBillingActionLoading(action);
+		setBillingActionMessage("");
+		setBillingActionTone("muted");
+
+		try {
+			const response = await fetch(`/api/portal/${action}`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					rentalId: billingRental?.id || null,
+				}),
+			});
+			const json = await response.json().catch(() => ({}));
+
+			if (!response.ok) {
+				setBillingActionTone("error");
+				setBillingActionMessage(
+					getApiErrorMessage(json, "Billing action failed.")
+				);
+				setBillingActionLoading("");
+				return;
+			}
+
+			if (json?.url) {
+				window.location.href = json.url;
+				return;
+			}
+
+			setBillingActionTone(json?.mode === "disabled" ? "warning" : "success");
+			setBillingActionMessage(
+				typeof json?.message === "string"
+					? json.message
+					: "Billing action is ready."
+			);
+			setBillingActionLoading("");
+		} catch {
+			setBillingActionTone("error");
+			setBillingActionMessage("Billing action failed.");
+			setBillingActionLoading("");
+		}
+	}
+
+	const billingActionMessageClass =
+		billingActionTone === "error"
+			? "text-red-600"
+			: billingActionTone === "success"
+				? "text-emerald-600"
+				: billingActionTone === "warning"
+					? "text-amber-600"
+					: "text-neutral-600 dark:text-neutral-400";
+
 	return (
 		<div className="grid grid-flow-row w-full h-full gap-7 mt-25 p-5 md:px-12 lg:px-20 pb-12 motion-enter">
 			<section className="surface-panel rounded-2xl p-5 md:p-6 flex flex-col gap-3">
@@ -141,6 +198,31 @@ export default function Portal() {
 							label="Deposit Amount"
 							value={formatCurrency(billingRental.depositAmount)}
 						/>
+						<div className="mt-5 flex flex-wrap gap-2">
+							<button
+								type="button"
+								onClick={() => runBillingAction("manage-billing")}
+								disabled={billingActionLoading === "manage-billing"}
+								className="rounded-lg border border-(--border-soft) px-3 py-2 text-sm font-semibold text-neutral-900 transition-colors hover:bg-neutral-100 disabled:opacity-60 dark:text-neutral-100 dark:hover:bg-neutral-900"
+							>
+								{billingActionLoading === "manage-billing"
+									? "Preparing"
+									: "Manage Billing"}
+							</button>
+							<button
+								type="button"
+								onClick={() => runBillingAction("pay-now")}
+								disabled={billingActionLoading === "pay-now"}
+								className="rounded-lg bg-(--branding-700) px-3 py-2 text-sm font-semibold text-neutral-50 transition-colors hover:bg-(--branding-800) disabled:opacity-60"
+							>
+								{billingActionLoading === "pay-now" ? "Preparing" : "Pay Now"}
+							</button>
+						</div>
+						{billingActionMessage ? (
+							<p className={`mt-3 text-sm ${billingActionMessageClass}`}>
+								{billingActionMessage}
+							</p>
+						) : null}
 					</Card>
 				) : (
 					<Card className="surface-subtle p-6">

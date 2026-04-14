@@ -2,34 +2,12 @@ import {
 	getPortalDataByEmail,
 	isPortalEligibleCustomerStatus,
 } from "@/lib/airtable";
-import jwt from "jsonwebtoken";
+import { requirePortalApiSession } from "@/lib/portalApi";
 
 export async function GET(req) {
-	const sessionToken = req.cookies.get("portal_session")?.value;
-
-	if (!sessionToken) {
-		return Response.json({ error: "Unauthorized" }, { status: 401 });
-	}
-
-	if (!process.env.NEXTAUTH_SECRET) {
-		return Response.json({ error: "Server configuration error" }, { status: 500 });
-	}
-
-	let email = null;
-	try {
-		const payload = jwt.verify(sessionToken, process.env.NEXTAUTH_SECRET);
-		email =
-			typeof payload === "object" && payload?.email
-				? String(payload.email).toLowerCase()
-				: null;
-		const tokenType =
-			typeof payload === "object" && payload?.type ? payload.type : null;
-		if (!email || tokenType !== "portal-session") {
-			return Response.json({ error: "Unauthorized" }, { status: 401 });
-		}
-	} catch {
-		return Response.json({ error: "Unauthorized" }, { status: 401 });
-	}
+	const auth = requirePortalApiSession(req);
+	if (auth.error) return auth.error;
+	const email = auth.email;
 
 	try {
 		const portalData = await getPortalDataByEmail(email);

@@ -1,5 +1,7 @@
 const STRIPE_API_BASE = "https://api.stripe.com/v1";
 const DEFAULT_CURRENCY = (process.env.STRIPE_DEFAULT_CURRENCY || "usd").toLowerCase();
+const STRIPE_TEMPORARILY_DISABLED_MESSAGE =
+	"Stripe API calls are temporarily disabled until a valid STRIPE_SECRET_KEY is configured.";
 
 function getStripeSecretKey() {
 	const value = process.env.STRIPE_SECRET_KEY || "";
@@ -62,6 +64,40 @@ function toUnixTimestamp(dateOnlyValue) {
 	const parsed = new Date(`${dateOnlyValue}T00:00:00.000Z`);
 	if (Number.isNaN(parsed.getTime())) return undefined;
 	return Math.floor(parsed.getTime() / 1000);
+}
+
+function toPreviewCurrency(value) {
+	const parsed = Number(value);
+	return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function buildStripePreview({ customer, rental }) {
+	return {
+		customerId: customer.id || customer.recordId || null,
+		customerEmail: customer.primaryEmail || null,
+		stripeCustomerId: customer.stripeCustomerId || null,
+		rentalId: rental.id || rental.recordId || null,
+		stripeSubscriptionId: rental.stripe?.subscriptionId || null,
+		stripePriceId: rental.stripe?.priceId || null,
+		stripeProductId: rental.stripe?.productId || null,
+		billingFrequency: rental.billingFrequency || "Monthly",
+		rate: toPreviewCurrency(rental.rate),
+		depositAmount: toPreviewCurrency(rental.depositAmount),
+		contractStartDate: rental.contractStartDate || null,
+		endDate: rental.endDate || null,
+		billingStatus: rental.billingStatus || null,
+	};
+}
+
+function buildDisabledStripeResponse(action, preview, extra = {}) {
+	return {
+		action,
+		mode: "disabled",
+		url: null,
+		disabledReason: STRIPE_TEMPORARILY_DISABLED_MESSAGE,
+		preview,
+		...extra,
+	};
 }
 
 export async function ensureStripeBillingRecords({
@@ -137,4 +173,98 @@ export async function ensureStripeBillingRecords({
 		subscriptionId,
 		subscription,
 	};
+}
+
+export async function createFirstPaymentLink({
+	customer,
+	rental,
+	successUrl,
+	cancelUrl,
+}) {
+	const preview = {
+		...buildStripePreview({ customer, rental }),
+		successUrl,
+		cancelUrl,
+	};
+
+	return buildDisabledStripeResponse("first_payment", preview);
+
+	/*
+	const session = await stripeRequest("/checkout/sessions", {
+		mode: "payment",
+		success_url: successUrl,
+		cancel_url: cancelUrl,
+		customer: customer.stripeCustomerId,
+		"line_items[0][price]": rental.stripe?.priceId,
+		"line_items[0][quantity]": 1,
+		"line_items[1][price_data][currency]": DEFAULT_CURRENCY,
+		"line_items[1][price_data][product_data][name]": "Security Deposit",
+		"line_items[1][price_data][unit_amount]": toUnitAmount(rental.depositAmount),
+		"line_items[1][quantity]": 1,
+	});
+
+	return {
+		action: "first_payment",
+		mode: "live",
+		url: session.url,
+		sessionId: session.id,
+		preview,
+	};
+	*/
+}
+
+export async function createBillingPortalLaunch({
+	customer,
+	returnUrl,
+}) {
+	const preview = {
+		customerId: customer.id || customer.recordId || null,
+		customerEmail: customer.primaryEmail || null,
+		stripeCustomerId: customer.stripeCustomerId || null,
+		returnUrl,
+	};
+
+	return buildDisabledStripeResponse("manage_billing", preview);
+
+	/*
+	const session = await stripeRequest("/billing_portal/sessions", {
+		customer: customer.stripeCustomerId,
+		return_url: returnUrl,
+	});
+
+	return {
+		action: "manage_billing",
+		mode: "live",
+		url: session.url,
+		sessionId: session.id,
+		preview,
+	};
+	*/
+}
+
+export async function createOutstandingBalanceLink({
+	customer,
+	rental,
+	successUrl,
+	cancelUrl,
+}) {
+	const preview = {
+		...buildStripePreview({ customer, rental }),
+		successUrl,
+		cancelUrl,
+	};
+
+	return buildDisabledStripeResponse("pay_now", preview);
+
+	/*
+	const invoice = await stripeRequest(`/invoices/${rental.stripe?.lastInvoiceId}/pay`, {});
+
+	return {
+		action: "pay_now",
+		mode: "live",
+		url: invoice.hosted_invoice_url,
+		invoiceId: invoice.id,
+		preview,
+	};
+	*/
 }
