@@ -1,5 +1,6 @@
 import Airtable from "airtable";
-import { ensureStripeBillingRecords } from "@/lib/stripe";
+// TEMPORARY: Re-enable this import once a valid STRIPE_SECRET_KEY is available.
+// import { ensureStripeBillingRecords } from "@/lib/stripe";
 
 const PORTAL_ELIGIBLE_STATUSES = new Set(["Active", "Past Due", "Suspended"]);
 
@@ -1390,6 +1391,10 @@ export async function applyAdminApplicationDecision(customerId, decisionInput = 
 				activeAssignmentsForRental.flatMap((assignment) => assignment.trailerRecordIds)
 			)
 		);
+		// TEMPORARY: Stripe provisioning is disabled until a valid STRIPE_SECRET_KEY
+		// is available. Re-enable the commented block below when Stripe testing resumes.
+		const stripeProvisioning = {};
+		/*
 		let stripeProvisioning;
 		try {
 			stripeProvisioning = await ensureStripeBillingRecords({
@@ -1407,6 +1412,7 @@ export async function applyAdminApplicationDecision(customerId, decisionInput = 
 					: "Failed to provision Stripe billing records."
 			);
 		}
+		*/
 		const billingStatus =
 			normalizeBillingStatusValue(stripeProvisioning?.subscription?.status) ||
 			(actionOutcome.rentalStatus === "Awaiting First Payment"
