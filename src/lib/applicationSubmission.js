@@ -1,8 +1,5 @@
 import Airtable from "airtable";
-import {
-	buildApplicationIntakeSummary,
-	composeCustomerNotes,
-} from "@/lib/applicationNotes";
+import { buildApplicationIntakeSummary } from "@/lib/applicationNotes";
 
 const TABLES = {
 	CUSTOMERS: "Customers",
@@ -15,7 +12,7 @@ const FIELDS = {
 		COMPANY_NAME: "Company Name",
 		PRIMARY_EMAIL: "Primary Email",
 		STATUS: "Status",
-		REVIEW_NOTES: "Review Notes",
+		APPLICATION_INTAKE_SUMMARY: "Application Intake Summary",
 		SUBMITTED_AT: "Submitted At",
 	},
 	RENTALS: {
@@ -54,6 +51,19 @@ const REQUIRED_TEXT_FIELDS = [
 ];
 
 const APPLICATION_ATTACHMENT_MAX_SIZE_BYTES = 5 * 1024 * 1024;
+const APPLICATION_ATTACHMENT_ALLOWED_TYPES = new Set([
+	"application/pdf",
+	"image/jpeg",
+	"image/png",
+	"image/webp",
+]);
+const APPLICATION_ATTACHMENT_ALLOWED_EXTENSIONS = [
+	".pdf",
+	".jpg",
+	".jpeg",
+	".png",
+	".webp",
+];
 const AIRTABLE_API_KEY = process.env.AIRTABLE_API_KEY;
 const AIRTABLE_BASE_ID = process.env.AIRTABLE_BASE_ID;
 
@@ -102,15 +112,38 @@ async function findCustomerByEmail(email) {
 	return records[0] ?? null;
 }
 
-function inferBillingFrequencyFromDuration(value) {
-	const normalizedValue = typeof value === "string" ? value.trim().toLowerCase() : "";
-	if (!normalizedValue) return undefined;
-	if (normalizedValue.includes("week")) return "Weekly";
-	if (normalizedValue.includes("month")) return "Monthly";
-	if (normalizedValue.includes("year") || normalizedValue.includes("annual")) {
-		return "Yearly";
+function digitsOnly(value) {
+	return String(value ?? "").replace(/\D/g, "");
+}
+
+function formatPhoneNumber(value) {
+	const digits = digitsOnly(value);
+	if (digits.length !== 10) return String(value ?? "").trim();
+	return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`;
+}
+
+function formatEin(value) {
+	const digits = digitsOnly(value);
+	if (digits.length !== 9) return String(value ?? "").trim();
+	return `${digits.slice(0, 2)}-${digits.slice(2)}`;
+}
+
+function formatSsn(value) {
+	const digits = digitsOnly(value);
+	if (digits.length !== 9) return String(value ?? "").trim();
+	return `${digits.slice(0, 3)}-${digits.slice(3, 5)}-${digits.slice(5)}`;
+}
+
+function isAllowedApplicationFile(file) {
+	const mimeType = String(file?.type ?? "").trim().toLowerCase();
+	if (mimeType && APPLICATION_ATTACHMENT_ALLOWED_TYPES.has(mimeType)) {
+		return true;
 	}
-	return undefined;
+
+	const filename = String(file?.name ?? "").trim().toLowerCase();
+	return APPLICATION_ATTACHMENT_ALLOWED_EXTENSIONS.some((extension) =>
+		filename.endsWith(extension)
+	);
 }
 
 async function uploadAttachmentToAirtable(recordId, fieldName, file) {
@@ -153,7 +186,7 @@ function normalizeApplicationInput(applicationInput = {}) {
 		partnerFirstName: String(applicationInput.partnerFirstName ?? "").trim(),
 		partnerLastName: String(applicationInput.partnerLastName ?? "").trim(),
 		email: normalizeEmail(applicationInput.email),
-		phone: String(applicationInput.phone ?? "").trim(),
+		phone: formatPhoneNumber(applicationInput.phone),
 		ownerAddress: String(applicationInput.ownerAddress ?? "").trim(),
 		ownerCity: String(applicationInput.ownerCity ?? "").trim(),
 		ownerRegion: String(applicationInput.ownerRegion ?? "").trim(),
@@ -163,17 +196,17 @@ function normalizeApplicationInput(applicationInput = {}) {
 		companyCity: String(applicationInput.companyCity ?? "").trim(),
 		companyRegion: String(applicationInput.companyRegion ?? "").trim(),
 		companyZip: String(applicationInput.companyZip ?? "").trim(),
-		ein: String(applicationInput.ein ?? "").trim(),
-		mcNumber: String(applicationInput.mcNumber ?? "").trim(),
-		usdot: String(applicationInput.usdot ?? "").trim(),
+		ein: formatEin(applicationInput.ein),
+		mcNumber: digitsOnly(applicationInput.mcNumber),
+		usdot: digitsOnly(applicationInput.usdot),
 		rentalDuration: String(applicationInput.rentalDuration ?? "").trim(),
 		ref1Name: String(applicationInput.ref1Name ?? "").trim(),
-		ref1Phone: String(applicationInput.ref1Phone ?? "").trim(),
+		ref1Phone: formatPhoneNumber(applicationInput.ref1Phone),
 		ref2Name: String(applicationInput.ref2Name ?? "").trim(),
-		ref2Phone: String(applicationInput.ref2Phone ?? "").trim(),
+		ref2Phone: formatPhoneNumber(applicationInput.ref2Phone),
 		ref3Name: String(applicationInput.ref3Name ?? "").trim(),
-		ref3Phone: String(applicationInput.ref3Phone ?? "").trim(),
-		ssn: String(applicationInput.ssn ?? "").trim(),
+		ref3Phone: formatPhoneNumber(applicationInput.ref3Phone),
+		ssn: formatSsn(applicationInput.ssn),
 		ssnAuth: Boolean(applicationInput.ssnAuth),
 		insurance: Boolean(applicationInput.insurance),
 		maintenance: Boolean(applicationInput.maintenance),
@@ -191,10 +224,49 @@ function validateApplication(normalizedApplication, filesByFieldName) {
 		throw new Error("A valid email address is required.");
 	}
 
+	if (!/^\d{3}-\d{3}-\d{4}$/.test(normalizedApplication.phone)) {
+		throw new Error("Phone must be a valid 10-digit number in the format 123-456-7890.");
+	}
+
+	if (!/^\d{2}-\d{7}$/.test(normalizedApplication.ein)) {
+		throw new Error("Federal Tax ID (EIN) must be in the format 12-3456789.");
+	}
+
+	if (!/^\d{4,10}$/.test(normalizedApplication.mcNumber)) {
+		throw new Error("MC Number must be between 4 and 10 digits.");
+	}
+
+	if (!/^\d{4,9}$/.test(normalizedApplication.usdot)) {
+		throw new Error("USDOT Number must be between 4 and 9 digits.");
+	}
+
+	if (!/^\d{3}-\d{2}-\d{4}$/.test(normalizedApplication.ssn)) {
+		throw new Error("SSN must be in the format 123-45-6789.");
+	}
+
+	for (const [fieldName, label] of [
+		["ref1Phone", "Reference phone 1"],
+		["ref2Phone", "Reference phone 2"],
+		["ref3Phone", "Reference phone 3"],
+	]) {
+		const value = normalizedApplication[fieldName];
+		if (value && !/^\d{3}-\d{3}-\d{4}$/.test(value)) {
+			throw new Error(`${label} must be a valid 10-digit number in the format 123-456-7890.`);
+		}
+	}
+
 	for (const [fieldName, config] of Object.entries(APPLICATION_DOCUMENT_FIELDS)) {
 		const file = filesByFieldName[fieldName];
 		if (!file || typeof file.arrayBuffer !== "function" || !file.size) {
 			throw new Error(`${config.label} is required.`);
+		}
+		if (typeof file.size === "number" && file.size > APPLICATION_ATTACHMENT_MAX_SIZE_BYTES) {
+			throw new Error(`${config.label} must be 5 MB or smaller.`);
+		}
+		if (!isAllowedApplicationFile(file)) {
+			throw new Error(
+				`${config.label} must be uploaded as a PDF, JPG, PNG, or WebP file.`
+			);
 		}
 	}
 
@@ -222,19 +294,15 @@ export async function createApplicationSubmission(applicationInput = {}, filesBy
 		[FIELDS.CUSTOMERS.COMPANY_NAME]: normalizedApplication.companyName,
 		[FIELDS.CUSTOMERS.PRIMARY_EMAIL]: normalizedApplication.email,
 		[FIELDS.CUSTOMERS.STATUS]: "Submitted",
-		[FIELDS.CUSTOMERS.REVIEW_NOTES]: composeCustomerNotes({
-			applicationIntakeSummary: buildApplicationIntakeSummary(normalizedApplication),
-			reviewNotes: null,
-		}),
+		[FIELDS.CUSTOMERS.APPLICATION_INTAKE_SUMMARY]:
+			buildApplicationIntakeSummary(normalizedApplication),
 		[FIELDS.CUSTOMERS.SUBMITTED_AT]: submittedAt,
 	});
 
 	const rentalRecord = await createRecord(TABLES.RENTALS, {
 		[FIELDS.RENTALS.CUSTOMER]: [customerRecord.id],
 		[FIELDS.RENTALS.STATUS]: "Submitted",
-		[FIELDS.RENTALS.BILLING_FREQUENCY]: inferBillingFrequencyFromDuration(
-			normalizedApplication.rentalDuration
-		),
+		[FIELDS.RENTALS.BILLING_FREQUENCY]: "Monthly",
 	});
 
 	const uploadedDocuments = [];

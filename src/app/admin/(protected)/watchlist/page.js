@@ -19,11 +19,13 @@ const CUSTOMER_STATUS_OPTIONS = [
 ];
 const RENTAL_STATUS_OPTIONS = [
 	"Submitted",
+	"Needs Info",
+	"Denied",
 	"Awaiting First Payment",
 	"Active",
 	"Overdue",
 	"Returned",
-	"Cancelled ",
+	"Cancelled",
 ];
 
 function formatDate(value) {

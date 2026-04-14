@@ -1,5 +1,4 @@
 import Airtable from "airtable";
-import { composeCustomerNotes, parseCustomerNotes } from "@/lib/applicationNotes";
 import { ensureStripeBillingRecords } from "@/lib/stripe";
 
 const PORTAL_ELIGIBLE_STATUSES = new Set(["Active", "Past Due", "Suspended"]);
@@ -20,6 +19,7 @@ const AIRTABLE_SCHEMA = {
 			STATUS: "Status",
 			STRIPE_CUSTOMER_ID: "Stripe Customer ID",
 			RENTALS: "Rentals",
+			APPLICATION_INTAKE_SUMMARY: "Application Intake Summary",
 			DECISION_BY: "Decision By",
 			REVIEW_NOTES: "Review Notes",
 			REVIEWED_AT: "Reviewed At",
@@ -170,6 +170,9 @@ function normalizeCustomerRecord(record) {
 		),
 		decisionBy:
 			record.get(AIRTABLE_SCHEMA.FIELDS.CUSTOMERS.DECISION_BY) ?? null,
+		applicationIntakeSummary:
+			record.get(AIRTABLE_SCHEMA.FIELDS.CUSTOMERS.APPLICATION_INTAKE_SUMMARY) ??
+			null,
 		reviewNotes:
 			record.get(AIRTABLE_SCHEMA.FIELDS.CUSTOMERS.REVIEW_NOTES) ?? null,
 		reviewedAt:
@@ -670,17 +673,29 @@ export const ADMIN_CUSTOMER_STATUS_OPTIONS = [
 ];
 export const ADMIN_RENTAL_STATUS_OPTIONS = [
 	"Submitted",
+	"Needs Info",
+	"Denied",
 	"Awaiting First Payment",
 	"Active",
 	"Overdue",
 	"Returned",
-	"Cancelled ",
+	"Cancelled",
 ];
 export const ADMIN_TRAILER_STATUS_OPTIONS = [
 	"Available",
 	"Reserved",
 	"Rented",
 	"Maintenance",
+];
+export const ADMIN_BILLING_FREQUENCY_OPTIONS = ["Weekly", "Monthly", "Yearly"];
+export const ADMIN_BILLING_STATUS_OPTIONS = [
+	"Draft",
+	"Awaiting First Payment",
+	"Active",
+	"Past Due",
+	"Suspended",
+	"Cancelled",
+	"Unpaid",
 ];
 const APPLICATION_REVIEW_CUSTOMER_STATUSES = new Set([
 	"Submitted",
@@ -690,10 +705,11 @@ const APPLICATION_REVIEW_CUSTOMER_STATUSES = new Set([
 ]);
 const APPLICATION_REVIEW_RENTAL_STATUSES = new Set([
 	"Submitted",
+	"Needs Info",
 	"Awaiting First Payment",
 ]);
 const ACTIVE_ASSIGNMENT_STATUSES = ["Active"];
-const RENTAL_STATUS_CANCELLED = "Cancelled ";
+const RENTAL_STATUS_CANCELLED = "Cancelled";
 
 const APPLICATION_DECISION_ACTIONS = {
 	APPROVE: "approve",
@@ -712,7 +728,7 @@ const APPLICATION_DECISION_OUTCOME = {
 	},
 	[APPLICATION_DECISION_ACTIONS.REQUEST_INFO]: {
 		customerStatus: "Needs Info",
-		rentalStatus: "Submitted",
+		rentalStatus: "Needs Info",
 	},
 };
 
@@ -764,6 +780,41 @@ function normalizeRecordIdList(value) {
 	}
 
 	return [];
+}
+
+function normalizeBillingFrequencyValue(value) {
+	if (typeof value !== "string") return null;
+	const trimmed = value.trim();
+	return ADMIN_BILLING_FREQUENCY_OPTIONS.includes(trimmed) ? trimmed : null;
+}
+
+function normalizeBillingStatusValue(value) {
+	if (typeof value !== "string") return null;
+	const trimmed = value.trim();
+	if (ADMIN_BILLING_STATUS_OPTIONS.includes(trimmed)) {
+		return trimmed;
+	}
+
+	switch (trimmed.toLowerCase()) {
+		case "active":
+		case "trialing":
+			return "Active";
+		case "past_due":
+			return "Past Due";
+		case "paused":
+			return "Suspended";
+		case "canceled":
+			return "Cancelled";
+		case "unpaid":
+		case "incomplete_expired":
+			return "Unpaid";
+		case "incomplete":
+			return "Awaiting First Payment";
+		case "draft":
+			return "Draft";
+		default:
+			return null;
+	}
 }
 
 function summarizeTrailersByStatus(trailers) {
@@ -1136,13 +1187,12 @@ export async function getAdminApplicationDetailsByCustomerId(customerId) {
 			status: customer.status,
 			submittedAt: customer.submittedAt,
 			reviewedAt: customer.reviewedAt,
+			applicationIntakeSummary: customer.applicationIntakeSummary,
 			reviewNotes: customer.reviewNotes,
 			decisionBy: customer.decisionBy,
 		},
 		rentals: rentalsDetailed,
-		documents: allDocuments
-			.filter((document) => document.rentalRecordIds.length === 0)
-			.map(publicDocumentView),
+		documents: allDocuments.map(publicDocumentView),
 		availableTrailers: availableTrailers.map(mapAdminTrailerOption),
 		conflicts,
 	};
@@ -1187,14 +1237,17 @@ export async function applyAdminApplicationDecision(customerId, decisionInput = 
 		typeof decisionInput.reviewNotes === "string"
 			? decisionInput.reviewNotes.trim()
 			: "";
+	const decisionBy =
+		typeof decisionInput.decisionBy === "string"
+			? decisionInput.decisionBy.trim()
+			: "";
 
 	const customerUpdateFields = sanitizeFieldsForUpdate({
 		[AIRTABLE_SCHEMA.FIELDS.CUSTOMERS.STATUS]: actionOutcome.customerStatus,
 		[AIRTABLE_SCHEMA.FIELDS.CUSTOMERS.REVIEWED_AT]: reviewedAt,
-		[AIRTABLE_SCHEMA.FIELDS.CUSTOMERS.REVIEW_NOTES]: composeCustomerNotes({
-			applicationIntakeSummary: parseCustomerNotes(customer.reviewNotes).applicationIntakeSummary,
-			reviewNotes: reviewNotes || parseCustomerNotes(customer.reviewNotes).reviewNotes || null,
-		}),
+		[AIRTABLE_SCHEMA.FIELDS.CUSTOMERS.DECISION_BY]: decisionBy || undefined,
+		[AIRTABLE_SCHEMA.FIELDS.CUSTOMERS.REVIEW_NOTES]:
+			reviewNotes || customer.reviewNotes || null,
 	});
 
 	if (action === APPLICATION_DECISION_ACTIONS.APPROVE) {
@@ -1203,6 +1256,9 @@ export async function applyAdminApplicationDecision(customerId, decisionInput = 
 		);
 		const rate = normalizeCurrencyValue(decisionInput.rate);
 		const depositAmount = normalizeCurrencyValue(decisionInput.depositAmount);
+		const billingFrequency = normalizeBillingFrequencyValue(
+			decisionInput.billingFrequency
+		);
 		const contractStartDate = normalizeDateOnlyValue(
 			decisionInput.contractStartDate
 		);
@@ -1255,6 +1311,13 @@ export async function applyAdminApplicationDecision(customerId, decisionInput = 
 			);
 		}
 
+		if (decisionInput.billingFrequency && !billingFrequency) {
+			throw new ApplicationDecisionError(
+				"VALIDATION",
+				"Billing frequency must be Weekly, Monthly, or Yearly."
+			);
+		}
+
 		const targetRental = selectDecisionTargetRental(rentals);
 		if (!targetRental) {
 			throw new ApplicationDecisionError(
@@ -1271,6 +1334,8 @@ export async function applyAdminApplicationDecision(customerId, decisionInput = 
 		}
 
 		const selectedEndDate = endDate || targetRental.endDate || null;
+		const selectedBillingFrequency =
+			billingFrequency || targetRental.billingFrequency || "Monthly";
 		const trailers = await getTrailersByIds(trailerRecordIds);
 		if (trailers.length !== trailerRecordIds.length) {
 			throw new ApplicationDecisionError(
@@ -1331,7 +1396,7 @@ export async function applyAdminApplicationDecision(customerId, decisionInput = 
 				customer,
 				rental: targetRental,
 				rate,
-				billingFrequency: targetRental.billingFrequency || "Monthly",
+				billingFrequency: selectedBillingFrequency,
 				contractStartDate,
 			});
 		} catch (error) {
@@ -1342,6 +1407,11 @@ export async function applyAdminApplicationDecision(customerId, decisionInput = 
 					: "Failed to provision Stripe billing records."
 			);
 		}
+		const billingStatus =
+			normalizeBillingStatusValue(stripeProvisioning?.subscription?.status) ||
+			(actionOutcome.rentalStatus === "Awaiting First Payment"
+				? "Awaiting First Payment"
+				: targetRental.billingStatus || "Draft");
 
 		const rentalUpdateFields = sanitizeFieldsForUpdate({
 			[AIRTABLE_SCHEMA.FIELDS.RENTALS.STATUS]: actionOutcome.rentalStatus,
@@ -1353,7 +1423,7 @@ export async function applyAdminApplicationDecision(customerId, decisionInput = 
 				operationalStartDate || contractStartDate,
 			[AIRTABLE_SCHEMA.FIELDS.RENTALS.END_DATE]: selectedEndDate || null,
 			[AIRTABLE_SCHEMA.FIELDS.RENTALS.BILLING_FREQUENCY]:
-				targetRental.billingFrequency || "Monthly",
+				selectedBillingFrequency,
 			[AIRTABLE_SCHEMA.FIELDS.RENTALS.STRIPE_PRODUCT_ID]:
 				stripeProvisioning.productId,
 			[AIRTABLE_SCHEMA.FIELDS.RENTALS.STRIPE_PRICE_ID]:
@@ -1370,8 +1440,7 @@ export async function applyAdminApplicationDecision(customerId, decisionInput = 
 					: undefined,
 			[AIRTABLE_SCHEMA.FIELDS.RENTALS.LAST_INVOICE_ID]:
 				stripeProvisioning.subscription?.latest_invoice || undefined,
-			[AIRTABLE_SCHEMA.FIELDS.RENTALS.BILLING_STATUS]:
-				stripeProvisioning.subscription?.status || undefined,
+			[AIRTABLE_SCHEMA.FIELDS.RENTALS.BILLING_STATUS]: billingStatus,
 		});
 		if (stripeProvisioning.stripeCustomerId) {
 			customerUpdateFields[AIRTABLE_SCHEMA.FIELDS.CUSTOMERS.STRIPE_CUSTOMER_ID] =
@@ -1723,6 +1792,7 @@ export async function updateAdminEntityStatus({
 	recordId,
 	nextStatus,
 	reason,
+	decisionBy,
 }) {
 	const normalizedEntityType =
 		typeof entityType === "string" ? entityType.trim().toLowerCase() : "";
@@ -1732,6 +1802,8 @@ export async function updateAdminEntityStatus({
 		typeof nextStatus === "string" ? nextStatus : "";
 	const normalizedReason =
 		typeof reason === "string" ? reason.trim() : "";
+	const normalizedDecisionBy =
+		typeof decisionBy === "string" ? decisionBy.trim() : "";
 
 	if (!normalizedEntityType || !normalizedRecordId || !normalizedNextStatus) {
 		throw new ApplicationDecisionError(
@@ -1759,10 +1831,10 @@ export async function updateAdminEntityStatus({
 			{
 				[AIRTABLE_SCHEMA.FIELDS.CUSTOMERS.STATUS]: normalizedNextStatus,
 				[AIRTABLE_SCHEMA.FIELDS.CUSTOMERS.REVIEWED_AT]: new Date().toISOString(),
-				[AIRTABLE_SCHEMA.FIELDS.CUSTOMERS.REVIEW_NOTES]: composeCustomerNotes({
-					applicationIntakeSummary: parseCustomerNotes(customer.reviewNotes).applicationIntakeSummary,
-					reviewNotes: normalizedReason || parseCustomerNotes(customer.reviewNotes).reviewNotes || null,
-				}),
+				[AIRTABLE_SCHEMA.FIELDS.CUSTOMERS.DECISION_BY]:
+					normalizedDecisionBy || undefined,
+				[AIRTABLE_SCHEMA.FIELDS.CUSTOMERS.REVIEW_NOTES]:
+					normalizedReason || customer.reviewNotes || null,
 			}
 		);
 

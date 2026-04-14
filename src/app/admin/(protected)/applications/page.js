@@ -6,7 +6,8 @@ import StateCard from "@/components/admin/StateCard";
 import StatusBadge from "@/components/admin/StatusBadge";
 import { LoadingCardGrid, LoadingPanel } from "@/components/ui/LoadingSkeleton";
 import { PlusIcon, XMarkIcon } from "@heroicons/react/20/solid";
-import { parseCustomerNotes } from "@/lib/applicationNotes";
+
+const BILLING_FREQUENCY_OPTIONS = ["Weekly", "Monthly", "Yearly"];
 
 function formatDate(value) {
 	if (!value) return "-";
@@ -53,8 +54,9 @@ function getDefaultDraft(details) {
 		: [];
 
 	return {
-		reviewNotes: parseCustomerNotes(details?.customer?.reviewNotes).reviewNotes ?? "",
+		reviewNotes: details?.customer?.reviewNotes ?? "",
 		trailerRecordIds: selectedTrailerRecordIds,
+		billingFrequency: firstRental?.billingFrequency || "Monthly",
 		rate: toInputNumber(firstRental?.rate),
 		depositAmount: toInputNumber(firstRental?.depositAmount),
 		contractStartDate: toInputDate(firstRental?.contractStartDate),
@@ -290,6 +292,7 @@ export default function AdminApplicationsPage() {
 			payload.trailerRecordIds = draft.trailerRecordIds;
 			payload.rate = draft.rate;
 			payload.depositAmount = draft.depositAmount;
+			payload.billingFrequency = draft.billingFrequency || "Monthly";
 			payload.contractStartDate = draft.contractStartDate;
 			payload.operationalStartDate =
 				draft.operationalStartDate || draft.contractStartDate;
@@ -386,8 +389,6 @@ export default function AdminApplicationsPage() {
 				const draft = decisionDraftByCustomerId[application.customerId] || {};
 				const actionLoading = actionLoadingByCustomerId[application.customerId];
 				const actionError = actionErrorByCustomerId[application.customerId];
-				const applicationNotes = parseCustomerNotes(application.reviewNotes);
-				const detailNotes = parseCustomerNotes(details?.customer?.reviewNotes);
 				const trailerCatalog = (() => {
 					const trailers = [];
 					const seen = new Set();
@@ -440,10 +441,10 @@ export default function AdminApplicationsPage() {
 								{formatDate(application.reviewedAt)}
 							</p>
 						</div>
-						{applicationNotes.reviewNotes ? (
+						{application.reviewNotes ? (
 							<p className="text-sm text-neutral-700 dark:text-neutral-300">
 								<span className="font-semibold">Review Notes: </span>
-								{applicationNotes.reviewNotes}
+								{application.reviewNotes}
 							</p>
 						) : null}
 						<ActionButton
@@ -474,13 +475,13 @@ export default function AdminApplicationsPage() {
 								) : null}
 								{details && !detailLoading ? (
 									<>
-										{detailNotes.applicationIntakeSummary ? (
+										{details.customer?.applicationIntakeSummary ? (
 											<div className="surface-subtle rounded-lg p-4 space-y-2">
 												<p className="font-semibold text-neutral-900 dark:text-neutral-100">
 													Application Intake Summary
 												</p>
 												<pre className="whitespace-pre-wrap text-sm text-neutral-700 dark:text-neutral-300 font-sans">
-													{detailNotes.applicationIntakeSummary}
+													{details.customer.applicationIntakeSummary}
 												</pre>
 											</div>
 										) : null}
@@ -534,7 +535,7 @@ export default function AdminApplicationsPage() {
 											</div>
 											<div className="space-y-2">
 												<p className="font-semibold text-neutral-900 dark:text-neutral-100">
-													Customer Documents
+													Application Documents
 												</p>
 												{details.documents?.length ? (
 													details.documents.map((document) => (
@@ -563,7 +564,7 @@ export default function AdminApplicationsPage() {
 													))
 												) : (
 													<p className="text-neutral-600 dark:text-neutral-400">
-														No customer-level documents.
+														No application documents.
 													</p>
 												)}
 											</div>
@@ -707,6 +708,28 @@ export default function AdminApplicationsPage() {
 														</div>
 													</div>
 												</div>
+												<FieldLabel>
+													<span className="font-semibold">
+														Billing Frequency
+													</span>
+													<select
+														value={draft.billingFrequency || "Monthly"}
+														onChange={(event) =>
+															updateDecisionDraft(
+																application.customerId,
+																"billingFrequency",
+																event.target.value,
+															)
+														}
+														className="w-full p-3 rounded-lg border border-(--border-soft) bg-neutral-50 dark:bg-neutral-900/40"
+													>
+														{BILLING_FREQUENCY_OPTIONS.map((option) => (
+															<option key={option} value={option}>
+																{option}
+															</option>
+														))}
+													</select>
+												</FieldLabel>
 												<FieldLabel>
 													<span className="font-semibold">Rate</span>
 													<input

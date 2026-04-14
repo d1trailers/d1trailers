@@ -9,11 +9,13 @@ import { LoadingCardGrid, LoadingPanel } from "@/components/ui/LoadingSkeleton";
 
 const RENTAL_STATUS_OPTIONS = [
 	"Submitted",
+	"Needs Info",
+	"Denied",
 	"Awaiting First Payment",
 	"Active",
 	"Overdue",
 	"Returned",
-	"Cancelled ",
+	"Cancelled",
 ];
 
 function formatDate(value) {

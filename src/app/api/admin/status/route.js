@@ -23,7 +23,10 @@ export async function POST(req) {
 	}
 
 	try {
-		const result = await updateAdminEntityStatus(body);
+		const result = await updateAdminEntityStatus({
+			...body,
+			decisionBy: auth.email,
+		});
 		return Response.json(result, { status: 200 });
 	} catch (error) {
 		if (error instanceof ApplicationDecisionError) {
