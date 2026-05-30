@@ -181,7 +181,7 @@ export default function Home() {
 						<h4 className="font-syne text-2xl font-bold">About Our Lineup</h4>
 						<p className="text-sm text-neutral-700 dark:text-neutral-300 leading-relaxed">
 							Our current fleet is centered on our{" "}
-							<span className="font-semibold">53' dry vans</span> for teams that
+							<span className="font-semibold">53&apos; dry vans</span> for teams that
 							need secure enclosed capacity and consistent availability for our
 							customers.
 						</p>

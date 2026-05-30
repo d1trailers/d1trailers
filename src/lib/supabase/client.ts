@@ -1,10 +1,12 @@
 import { createBrowserClient } from "@supabase/ssr";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+const supabasePublishableKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
 
-export const createClient = () =>
-  createBrowserClient(
-    supabaseUrl!,
-    supabaseKey!,
-  );
+export function createClient() {
+	if (!supabaseUrl || !supabasePublishableKey) {
+		throw new Error("Supabase browser client is not configured.");
+	}
+
+	return createBrowserClient(supabaseUrl, supabasePublishableKey);
+}

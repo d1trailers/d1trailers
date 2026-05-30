@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import MetricCard from "@/components/admin/MetricCard";
 import StateCard from "@/components/admin/StateCard";
-import Card from "@/components/ui/Card";
 import { LoadingCardGrid, LoadingPanel } from "@/components/ui/LoadingSkeleton";
 
 export default function AdminOverviewPage() {
@@ -44,65 +43,24 @@ export default function AdminOverviewPage() {
 	if (loading) {
 		return (
 			<div className="space-y-4">
-				<LoadingPanel
-					title="Loading Overview"
-					subtitle="Fetching admin summary metrics."
-				/>
-				<LoadingCardGrid count={6} />
+				<LoadingPanel title="Loading Overview" subtitle="Fetching tenant and application metrics." />
+				<LoadingCardGrid count={4} />
 			</div>
 		);
 	}
 
 	if (error || !data) {
-		return (
-			<StateCard
-				title="Overview Unavailable"
-				message={error || "Failed to load admin summary."}
-				tone="error"
-			/>
-		);
+		return <StateCard title="Overview Unavailable" message={error || "Failed to load admin summary."} tone="error" />;
 	}
 
-	const trailersByStatus = data.trailersByStatus ?? {};
-
 	return (
-		<div className="space-y-5">
-			<div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-				<MetricCard
-					label="Applications Pending"
-					value={data.applicationsPending}
-					hint="Submitted, review, needs info, awaiting payment"
-				/>
-				<MetricCard label="Awaiting Payment" value={data.awaitingPayment} />
-				<MetricCard label="Active Rentals" value={data.activeRentals} />
-				<MetricCard label="Overdue Rentals" value={data.overdueRentals} />
-				<MetricCard label="Past Due Customers" value={data.pastDueCustomers} />
-				<MetricCard
-					label="Suspended Customers"
-					value={data.suspendedCustomers}
-				/>
+		<div className="space-y-4">
+			<div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+				<MetricCard label="Lead Tenants" value={data.leads ?? 0} hint="Interest submissions that have not applied yet" />
+				<MetricCard label="Applications In Review" value={data.applicationsInReview ?? 0} hint="Applied, under review, or feedback requested" />
+				<MetricCard label="Approved Awaiting Activation" value={data.approvedAwaitingActivation ?? 0} hint="Approved but not yet active" />
+				<MetricCard label="Active Tenants" value={data.activeTenants ?? 0} hint="Active, past due, or suspended accounts" />
 			</div>
-
-			<Card>
-				<h2 className="font-syne text-xl font-bold text-neutral-950 dark:text-neutral-50">
-					Trailer Status Snapshot
-				</h2>
-				<div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-					{Object.entries(trailersByStatus).map(([status, count]) => (
-						<div
-							key={status}
-							className="surface-subtle rounded-lg p-3"
-						>
-							<p className="text-xs text-neutral-600 dark:text-neutral-400">
-								{status}
-							</p>
-							<p className="text-xl font-semibold text-neutral-950 dark:text-neutral-50">
-								{count}
-							</p>
-						</div>
-					))}
-				</div>
-			</Card>
 		</div>
 	);
 }

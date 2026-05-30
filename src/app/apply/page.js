@@ -110,7 +110,7 @@ function Form() {
 
 			formRef.current?.reset();
 			setSuccess(
-				"Application submitted. Our team will review your application shortly."
+				"Application submitted. Our team will review it shortly, and you can use this email to log in and follow the application timeline."
 			);
 			setSubmitting(false);
 		} catch {

@@ -10,15 +10,22 @@
 	},
 	"dependencies": {
 		"@heroicons/react": "^2.2.0",
+		"@supabase/ssr": "^0.10.3",
+		"@supabase/supabase-js": "^2.106.2",
+		"@types/node": "^25.9.1",
+		"@types/react": "^19.2.15",
+		"@types/react-dom": "^19.2.3",
 		"airtable": "^0.12.2",
 		"cookie": "^1.1.1",
 		"googleapis": "^170.0.0",
 		"jsonwebtoken": "^9.0.3",
 		"next": "^16.2.6",
-		"next-auth": "^3.29.10",
 		"nodemailer": "^8.0.5",
 		"react": "19.2.1",
-		"react-dom": "19.2.1"
+		"react-dom": "19.2.1",
+		"resend": "^6.12.4",
+		"typescript": "^6.0.3",
+		"zod": "^4.4.3"
 	},
 	"devDependencies": {
 		"@tailwindcss/postcss": "^4",

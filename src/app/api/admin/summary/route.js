@@ -1,12 +1,12 @@
-import { getAdminSummaryData } from "@/lib/airtable";
+import { getAdminSummary } from "@/lib/server/services/dashboard";
 import { requireAdminApiSession } from "@/lib/adminApi";
 
-export async function GET(req) {
-	const auth = requireAdminApiSession(req);
+export async function GET() {
+	const auth = await requireAdminApiSession();
 	if (auth.error) return auth.error;
 
 	try {
-		const summary = await getAdminSummaryData();
+		const summary = await getAdminSummary();
 		return Response.json(summary, { status: 200 });
 	} catch (error) {
 		console.error("Failed to load admin summary:", error);

@@ -1,26 +1,27 @@
-import { getAdminApplicationDetailsByCustomerId } from "@/lib/airtable";
+import { getApplicationById } from "@/lib/server/repos/platform";
 import { requireAdminApiSession } from "@/lib/adminApi";
 
-export async function GET(req, { params }) {
-	const auth = requireAdminApiSession(req);
+export async function GET(_req, { params }) {
+	const auth = await requireAdminApiSession();
 	if (auth.error) return auth.error;
 
-	const routeParams = await params;
-	const customerId =
-		typeof routeParams?.customerId === "string"
-			? routeParams.customerId.trim()
+	const resolvedParams = await params;
+	const applicationId =
+		typeof resolvedParams?.customerId === "string"
+			? resolvedParams.customerId
 			: "";
-	if (!customerId) {
-		return Response.json({ error: "Customer ID is required" }, { status: 400 });
+
+	if (!applicationId) {
+		return Response.json({ error: "Application ID is required." }, { status: 400 });
 	}
 
 	try {
-		const details = await getAdminApplicationDetailsByCustomerId(customerId);
-		if (!details) {
-			return Response.json({ error: "Application not found" }, { status: 404 });
+		const application = await getApplicationById(applicationId);
+		if (!application) {
+			return Response.json({ error: "Application not found." }, { status: 404 });
 		}
 
-		return Response.json(details, { status: 200 });
+		return Response.json(application, { status: 200 });
 	} catch (error) {
 		console.error("Failed to load admin application details:", error);
 		return Response.json(

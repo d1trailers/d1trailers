@@ -1,24 +1,12 @@
-import {
-	getPortalDataByEmail,
-	isPortalEligibleCustomerStatus,
-} from "@/lib/airtable";
 import { requirePortalApiSession } from "@/lib/portalApi";
+import { getPortalSnapshot } from "@/lib/server/services/dashboard";
 
-export async function GET(req) {
-	const auth = requirePortalApiSession(req);
+export async function GET() {
+	const auth = await requirePortalApiSession();
 	if (auth.error) return auth.error;
-	const email = auth.email;
 
 	try {
-		const portalData = await getPortalDataByEmail(email);
-		if (!portalData?.customer) {
-			return Response.json({ error: "Unauthorized" }, { status: 401 });
-		}
-
-		if (!isPortalEligibleCustomerStatus(portalData.customer.status)) {
-			return Response.json({ error: "Portal access is not available" }, { status: 403 });
-		}
-
+		const portalData = await getPortalSnapshot(auth.context);
 		return Response.json(portalData);
 	} catch (error) {
 		console.error("Failed to load portal data:", error);

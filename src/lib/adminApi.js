@@ -1,26 +1,23 @@
-import {
-	getAdminEmailFromRequest,
-	isAdminEmailAllowlisted,
-} from "@/lib/adminAuth";
+import { getCurrentUserContext, isStaffContext } from "@/lib/server/services/access";
 
-export function requireAdminApiSession(req) {
-	const email = getAdminEmailFromRequest(req);
-	if (!email) {
+export async function requireAdminApiSession() {
+	const context = await getCurrentUserContext();
+	if (!context) {
 		return {
 			error: Response.json({ error: "Unauthorized" }, { status: 401 }),
-			email: null,
+			context: null,
 		};
 	}
 
-	if (!isAdminEmailAllowlisted(email)) {
+	if (!isStaffContext(context)) {
 		return {
 			error: Response.json({ error: "Forbidden" }, { status: 403 }),
-			email: null,
+			context: null,
 		};
 	}
 
 	return {
 		error: null,
-		email,
+		context,
 	};
 }

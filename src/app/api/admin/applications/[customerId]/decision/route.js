@@ -1,53 +1,60 @@
-import {
-	applyAdminApplicationDecision,
-	ApplicationDecisionError,
-} from "@/lib/airtable";
 import { requireAdminApiSession } from "@/lib/adminApi";
+import { reviewApplication } from "@/lib/server/services/applications";
 
-function mapDecisionErrorToStatus(code) {
-	if (code === "VALIDATION") return 400;
-	if (code === "NOT_FOUND") return 404;
-	if (code === "CONFLICT") return 409;
-	return 500;
-}
+const ACTION_MAP = {
+	review: "under_review",
+	request_info: "feedback_requested",
+	approve: "approved",
+	deny: "closed",
+};
 
 export async function POST(req, { params }) {
-	const auth = requireAdminApiSession(req);
+	const auth = await requireAdminApiSession();
 	if (auth.error) return auth.error;
 
-	const routeParams = await params;
-	const customerId =
-		typeof routeParams?.customerId === "string"
-			? routeParams.customerId.trim()
+	const resolvedParams = await params;
+	const applicationId =
+		typeof resolvedParams?.customerId === "string"
+			? resolvedParams.customerId
 			: "";
-	if (!customerId) {
-		return Response.json({ error: "Customer ID is required" }, { status: 400 });
+
+	if (!applicationId) {
+		return Response.json({ error: "Application ID is required." }, { status: 400 });
 	}
 
-	let body;
+	let body = {};
 	try {
 		body = await req.json();
 	} catch {
-		return Response.json({ error: "Invalid request body" }, { status: 400 });
+		body = {};
+	}
+
+	const nextAction =
+		typeof body?.action === "string" ? ACTION_MAP[body.action] : undefined;
+
+	if (!nextAction) {
+		return Response.json({ error: "A valid application action is required." }, { status: 400 });
 	}
 
 	try {
-		const result = await applyAdminApplicationDecision(customerId, {
-			...body,
-			decisionBy: auth.email,
+		const application = await reviewApplication({
+			applicationId,
+			action: nextAction,
+			reviewNotes:
+				typeof body?.reviewNotes === "string" ? body.reviewNotes.trim() : "",
+			actorContext: auth.context,
 		});
-		return Response.json(result, { status: 200 });
-	} catch (error) {
-		if (error instanceof ApplicationDecisionError) {
-			return Response.json(
-				{ error: error.message },
-				{ status: mapDecisionErrorToStatus(error.code) }
-			);
-		}
 
+		return Response.json(application, { status: 200 });
+	} catch (error) {
 		console.error("Failed to apply admin application decision:", error);
 		return Response.json(
-			{ error: "Failed to apply application decision" },
+			{
+				error:
+					error instanceof Error
+						? error.message
+						: "Failed to apply application review action.",
+			},
 			{ status: 500 }
 		);
 	}

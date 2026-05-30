@@ -1,28 +1,36 @@
-import { createServerClient } from "@supabase/ssr";
+import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { cookies } from "next/headers";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+const supabasePublishableKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
 
-export const createClient = (cookieStore: Awaited<ReturnType<typeof cookies>>) => {
-  return createServerClient(
-    supabaseUrl!,
-    supabaseKey!,
-    {
-      cookies: {
-        getAll() {
-          return cookieStore.getAll()
-        },
-        setAll(cookiesToSet) {
-          try {
-            cookiesToSet.forEach(({ name, value, options }) => cookieStore.set(name, value, options))
-          } catch {
-            // The `setAll` method was called from a Server Component.
-            // This can be ignored if you have middleware refreshing
-            // user sessions.
-          }
-        },
-      },
-    },
-  );
-};
+function assertSupabaseEnv() {
+	if (!supabaseUrl || !supabasePublishableKey) {
+		throw new Error("Supabase environment is not configured.");
+	}
+}
+
+export async function createClient() {
+	assertSupabaseEnv();
+	const cookieStore = await cookies();
+	const url = supabaseUrl as string;
+	const publishableKey = supabasePublishableKey as string;
+
+	return createServerClient(url, publishableKey, {
+		cookies: {
+			getAll() {
+				return cookieStore.getAll();
+			},
+			setAll(cookiesToSet) {
+				try {
+					cookiesToSet.forEach(({ name, value, options }) =>
+						cookieStore.set(name, value, options as CookieOptions)
+					);
+				} catch {
+					// Server Components cannot always mutate cookies directly.
+					// Middleware is responsible for refreshing persisted auth state.
+				}
+			},
+		},
+	});
+}

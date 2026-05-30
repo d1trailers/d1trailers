@@ -25,23 +25,23 @@ export default function Login() {
 		setSent(false);
 
 		try {
-			const requestInit = {
+			const response = await fetch("/api/auth/request-login-link", {
 				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ email }),
-			};
+				headers: {
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify({
+					email,
+				}),
+			});
+			const json = await response.json().catch(() => ({}));
 
-			const [customerRequest, adminRequest] = await Promise.allSettled([
-				fetch("/api/send-magic-link", requestInit),
-				fetch("/api/admin/send-magic-link", requestInit),
-			]);
-
-			const customerOk =
-				customerRequest.status === "fulfilled" && customerRequest.value.ok;
-			const adminOk = adminRequest.status === "fulfilled" && adminRequest.value.ok;
-
-			if (!customerOk && !adminOk) {
-				setError("Failed to generate login link");
+			if (!response.ok) {
+				setError(
+					typeof json?.error === "string"
+						? json.error
+						: "Failed to send login link."
+				);
 				setLoading(false);
 				return;
 			}
@@ -49,7 +49,7 @@ export default function Login() {
 			setSent(true);
 			setLoading(false);
 		} catch {
-			setError("Failed to generate login link");
+			setError("Failed to send login link.");
 			setLoading(false);
 		}
 	}
@@ -59,14 +59,14 @@ export default function Login() {
 			<Card className="w-full max-w-lg p-8 gap-8">
 				<section className="space-y-2">
 					<p className="text-xs uppercase tracking-[0.14em] text-neutral-600 dark:text-neutral-400">
-						Portal Access
+						Account Access
 					</p>
 					<h2 className="text-2xl font-bold">Login</h2>
 					<p className="text-sm text-neutral-600 dark:text-neutral-400">
 						Enter your email to receive a secure magic link.
 					</p>
 					<p className="text-xs text-neutral-500 dark:text-neutral-400">
-						Links expire automatically for security. Use the most recent email if an older link no longer works.
+						Use the most recent email you receive. Links expire automatically for security.
 					</p>
 				</section>
 
@@ -82,6 +82,7 @@ export default function Login() {
 						/>
 
 						<button
+							type="submit"
 							disabled={loading}
 							className="w-full bg-(--branding-700) hover:bg-(--branding-800) text-neutral-50 py-4 rounded-xl font-bold transition disabled:opacity-60 flex items-center justify-center"
 						>
@@ -95,15 +96,13 @@ export default function Login() {
 							)}
 						</button>
 
-						{error ? (
-							<p className="text-sm text-red-600 font-medium">{error}</p>
-						) : null}
+						{error ? <p className="text-sm text-red-600 font-medium">{error}</p> : null}
 					</form>
 				) : (
 					<div className="text-center space-y-3">
 						<p className="font-semibold">Check your email</p>
 						<p className="text-sm text-neutral-600 dark:text-neutral-400">
-							If this email is eligible, a secure login link has been sent.
+							If this email is recognized in the system, a secure login link has been sent.
 						</p>
 					</div>
 				)}

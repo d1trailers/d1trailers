@@ -32,25 +32,17 @@ export default function StatusChangeControl({
 	label,
 	onUpdated,
 }) {
-	const [selectedStatus, setSelectedStatus] = useState(currentStatus || "");
+	const [selectedStatus, setSelectedStatus] = useState("");
 	const [menuOpen, setMenuOpen] = useState(false);
 	const [modalOpen, setModalOpen] = useState(false);
 	const [reason, setReason] = useState("");
 	const [loading, setLoading] = useState(false);
 	const [error, setError] = useState("");
-	const [portalReady, setPortalReady] = useState(false);
 	const [menuPosition, setMenuPosition] = useState(null);
 	const rootRef = useRef(null);
 	const triggerRef = useRef(null);
 	const menuRef = useRef(null);
-
-	useEffect(() => {
-		setSelectedStatus(currentStatus || "");
-	}, [currentStatus]);
-
-	useEffect(() => {
-		setPortalReady(true);
-	}, []);
+	const portalReady = typeof document !== "undefined";
 
 	useEffect(() => {
 		if (!menuOpen) return;
@@ -84,7 +76,7 @@ export default function StatusChangeControl({
 				"Denied",
 				"Suspended",
 				"Returned",
-				"Cancelled ",
+				"Cancelled",
 				"Available",
 				"Maintenance",
 			].includes(selectedStatus),
@@ -121,6 +113,7 @@ export default function StatusChangeControl({
 			setLoading(false);
 			setModalOpen(false);
 			setReason("");
+			setSelectedStatus("");
 			onUpdated?.(json);
 		} catch {
 			setError("Failed to update status.");
@@ -133,6 +126,7 @@ export default function StatusChangeControl({
 		if (!option || option === currentStatus) return;
 		setSelectedStatus(option);
 		setError("");
+		setReason("");
 		setModalOpen(true);
 	}
 

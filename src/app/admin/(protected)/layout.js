@@ -1,20 +1,13 @@
-import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import AdminShell from "@/components/admin/AdminShell";
-import {
-	ADMIN_COOKIE_NAME,
-	isAdminEmailAllowlisted,
-	verifyAdminSessionToken,
-} from "@/lib/adminAuth";
+import { getCurrentUserContext, isStaffContext } from "@/lib/server/services/access";
 
 export default async function AdminProtectedLayout({ children }) {
-	const cookieStore = await cookies();
-	const sessionToken = cookieStore.get(ADMIN_COOKIE_NAME)?.value;
-	const email = verifyAdminSessionToken(sessionToken);
+	const context = await getCurrentUserContext();
 
-	if (!email || !isAdminEmailAllowlisted(email)) {
+	if (!context || !isStaffContext(context)) {
 		redirect("/login");
 	}
 
-	return <AdminShell adminEmail={email}>{children}</AdminShell>;
+	return <AdminShell adminEmail={context.email}>{children}</AdminShell>;
 }
