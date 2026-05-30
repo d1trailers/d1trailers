@@ -14,9 +14,9 @@
 		"cookie": "^1.1.1",
 		"googleapis": "^170.0.0",
 		"jsonwebtoken": "^9.0.3",
-		"next": "16.0.10",
-		"next-auth": "^4.24.7",
-		"nodemailer": "^7.0.12",
+		"next": "^16.2.4",
+		"next-auth": "^4.24.14",
+		"nodemailer": "^8.0.5",
 		"react": "19.2.1",
 		"react-dom": "19.2.1"
 	},
