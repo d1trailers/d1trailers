@@ -116,3 +116,34 @@ export function buildFeedbackRequestedEmail(input: {
 	return { subject, html, text };
 }
 
+export function buildPortalAccessEmail(input: {
+	tenantName: string;
+	inviterName?: string | null;
+	roleLabel: string;
+}) {
+	const subject = `You have been invited to access ${input.tenantName} on D1Trailers`;
+	const html = wrapHtml(`
+		<p>Hello,</p>
+		<p>You have been invited to access the <strong>${input.tenantName}</strong> account on D1Trailers as <strong>${input.roleLabel}</strong>.</p>
+		${
+			input.inviterName
+				? `<p>This invitation was sent by ${input.inviterName}.</p>`
+				: ""
+		}
+		<p>Use the D1Trailers login page with this email address to sign in. We&apos;ll guide you to the right account automatically.</p>
+	`);
+	const text = [
+		"Hello,",
+		"",
+		`You have been invited to access the ${input.tenantName} account on D1Trailers as ${input.roleLabel}.`,
+		input.inviterName ? `This invitation was sent by ${input.inviterName}.` : null,
+		"Use the D1Trailers login page with this email address to sign in. We'll guide you to the right account automatically.",
+		"",
+		"D1Trailers",
+	]
+		.filter(Boolean)
+		.join("\n");
+
+	return { subject, html, text };
+}
+

@@ -4,6 +4,10 @@ import type {
 	ApplicationSubmissionInput,
 	RequiredApplicationDocumentField,
 } from "@/lib/contracts/application";
+import type {
+	TenantPermission,
+	TenantRole,
+} from "@/lib/contracts/account";
 import type { InterestSubmissionInput } from "@/lib/contracts/interest";
 
 export type TenantRecord = {
@@ -29,10 +33,11 @@ export type TenantMembershipRecord = {
 	id: string;
 	tenant_id: string;
 	profile_id: string;
-	role: "account_owner" | "account_user";
+	role: TenantRole;
 	invitation_status: string;
 	is_active: boolean;
 	tenant?: TenantRecord;
+	permissions?: TenantMembershipPermissionRecord[];
 };
 
 export type ProfileRecord = {
@@ -40,6 +45,31 @@ export type ProfileRecord = {
 	email: string;
 	display_name: string | null;
 	phone: string | null;
+	last_active_tenant_id: string | null;
+};
+
+export type TenantMembershipPermissionRecord = {
+	id: string;
+	membership_id: string;
+	permission: TenantPermission;
+};
+
+export type TenantInvitationRecord = {
+	id: string;
+	tenant_id: string;
+	invited_email: string;
+	invited_by_profile_id: string | null;
+	accepted_by_profile_id: string | null;
+	target_role: TenantRole;
+	permission_snapshot: TenantPermission[];
+	status: "pending" | "accepted" | "revoked" | "expired";
+	expires_at: string | null;
+	accepted_at: string | null;
+	revoked_at: string | null;
+	created_at: string;
+	updated_at: string;
+	tenant?: TenantRecord;
+	invited_by_profile?: ProfileRecord | null;
 };
 
 export type CommunicationEventRecord = {
@@ -161,7 +191,22 @@ export async function ensureProfile(input: {
 				phone: input.phone ?? null,
 			},
 			{ onConflict: "id" }
-		)
+	)
+	.select("*")
+	.single();
+	return assertData(data as ProfileRecord | null, error);
+}
+
+export async function updateProfileLastActiveTenant(input: {
+	profileId: string;
+	tenantId: string | null;
+}) {
+	const { data, error } = await admin()
+		.from("profiles")
+		.update({
+			last_active_tenant_id: input.tenantId,
+		})
+		.eq("id", input.profileId)
 		.select("*")
 		.single();
 	return assertData(data as ProfileRecord | null, error);
@@ -181,12 +226,36 @@ export async function getStaffMembershipByProfileId(profileId: string) {
 export async function getTenantMembershipsByProfileId(profileId: string) {
 	const { data, error } = await admin()
 		.from("tenant_memberships")
-		.select("*, tenant:tenants(*)")
+		.select("*, tenant:tenants(*), permissions:tenant_membership_permissions(*)")
 		.eq("profile_id", profileId)
 		.eq("is_active", true)
 		.order("created_at", { ascending: true });
 	if (error) throw new Error(error.message);
 	return (data as TenantMembershipRecord[]) ?? [];
+}
+
+export async function getTenantMembershipById(membershipId: string) {
+	const { data, error } = await admin()
+		.from("tenant_memberships")
+		.select("*, tenant:tenants(*), permissions:tenant_membership_permissions(*)")
+		.eq("id", membershipId)
+		.maybeSingle();
+	if (error) throw new Error(error.message);
+	return (data as TenantMembershipRecord | null) ?? null;
+}
+
+export async function getTenantMembershipByTenantAndProfile(input: {
+	tenantId: string;
+	profileId: string;
+}) {
+	const { data, error } = await admin()
+		.from("tenant_memberships")
+		.select("*, tenant:tenants(*), permissions:tenant_membership_permissions(*)")
+		.eq("tenant_id", input.tenantId)
+		.eq("profile_id", input.profileId)
+		.maybeSingle();
+	if (error) throw new Error(error.message);
+	return (data as TenantMembershipRecord | null) ?? null;
 }
 
 export async function getTenantByPrimaryEmail(email: string) {
@@ -584,8 +653,9 @@ export async function updateApplicationReview(input: {
 export async function createTenantMembership(input: {
 	tenantId: string;
 	profileId: string;
-	role: "account_owner" | "account_user";
+	role: TenantRole;
 	invitationStatus?: string;
+	isActive?: boolean;
 }) {
 	const { data, error } = await admin()
 		.from("tenant_memberships")
@@ -595,13 +665,206 @@ export async function createTenantMembership(input: {
 				profile_id: input.profileId,
 				role: input.role,
 				invitation_status: input.invitationStatus ?? "active",
-				is_active: true,
+				is_active: input.isActive ?? true,
 			},
 			{ onConflict: "tenant_id,profile_id" }
 		)
-		.select("*")
+		.select("*, tenant:tenants(*), permissions:tenant_membership_permissions(*)")
 		.single();
 	return assertData(data as TenantMembershipRecord | null, error);
+}
+
+export async function updateTenantMembership(input: {
+	membershipId: string;
+	role?: TenantRole;
+	invitationStatus?: string;
+	isActive?: boolean;
+}) {
+	const updates: Record<string, unknown> = {};
+	if (input.role) updates.role = input.role;
+	if (typeof input.invitationStatus === "string") {
+		updates.invitation_status = input.invitationStatus;
+	}
+	if (typeof input.isActive === "boolean") updates.is_active = input.isActive;
+
+	const { data, error } = await admin()
+		.from("tenant_memberships")
+		.update(updates)
+		.eq("id", input.membershipId)
+		.select("*, tenant:tenants(*), permissions:tenant_membership_permissions(*)")
+		.single();
+	return assertData(data as TenantMembershipRecord | null, error);
+}
+
+export async function replaceTenantMembershipPermissions(input: {
+	membershipId: string;
+	permissions: TenantPermission[];
+}) {
+	const client = admin();
+	const { error: deleteError } = await client
+		.from("tenant_membership_permissions")
+		.delete()
+		.eq("membership_id", input.membershipId);
+
+	if (deleteError) throw new Error(deleteError.message);
+
+	if (!input.permissions.length) {
+		return [] as TenantMembershipPermissionRecord[];
+	}
+
+	const uniquePermissions = [...new Set(input.permissions)];
+	const { data, error } = await client
+		.from("tenant_membership_permissions")
+		.insert(
+			uniquePermissions.map((permission) => ({
+				membership_id: input.membershipId,
+				permission,
+			}))
+		)
+		.select("*");
+
+	if (error) throw new Error(error.message);
+	return (data as TenantMembershipPermissionRecord[]) ?? [];
+}
+
+export async function listTenantMembersByTenantId(tenantId: string) {
+	const { data, error } = await admin()
+		.from("tenant_memberships")
+		.select("*, profile:profiles(*), permissions:tenant_membership_permissions(*)")
+		.eq("tenant_id", tenantId)
+		.order("created_at", { ascending: true });
+	if (error) throw new Error(error.message);
+	return (data ??
+		[]) as (TenantMembershipRecord & { profile?: ProfileRecord | null })[];
+}
+
+export async function countActiveOwnersForTenant(tenantId: string) {
+	const { count, error } = await admin()
+		.from("tenant_memberships")
+		.select("*", { count: "exact", head: true })
+		.eq("tenant_id", tenantId)
+		.eq("role", "account_owner")
+		.eq("is_active", true)
+		.eq("invitation_status", "active");
+
+	if (error) throw new Error(error.message);
+	return count ?? 0;
+}
+
+export async function createTenantInvitation(input: {
+	tenantId: string;
+	invitedEmail: string;
+	invitedByProfileId?: string | null;
+	targetRole: TenantRole;
+	permissionSnapshot?: TenantPermission[];
+	expiresAt?: string | null;
+}) {
+	const normalizedEmail = normalizeEmail(input.invitedEmail);
+	const existing = await admin()
+		.from("tenant_invitations")
+		.select("id")
+		.eq("tenant_id", input.tenantId)
+		.ilike("invited_email", normalizedEmail)
+		.eq("status", "pending")
+		.maybeSingle();
+
+	if (existing.error) {
+		throw new Error(existing.error.message);
+	}
+
+	if (existing.data?.id) {
+		return updateTenantInvitation({
+			invitationId: existing.data.id,
+			targetRole: input.targetRole,
+			permissionSnapshot: input.permissionSnapshot ?? [],
+			status: "pending",
+			expiresAt: input.expiresAt ?? null,
+			acceptedAt: null,
+			acceptedByProfileId: null,
+			revokedAt: null,
+		});
+	}
+
+	const { data, error } = await admin()
+		.from("tenant_invitations")
+		.insert({
+			tenant_id: input.tenantId,
+			invited_email: normalizedEmail,
+			invited_by_profile_id: input.invitedByProfileId ?? null,
+			target_role: input.targetRole,
+			permission_snapshot: input.permissionSnapshot ?? [],
+			status: "pending",
+			expires_at: input.expiresAt ?? null,
+			accepted_at: null,
+			accepted_by_profile_id: null,
+			revoked_at: null,
+		})
+		.select("*, tenant:tenants(*), invited_by_profile:profiles!tenant_invitations_invited_by_profile_id_fkey(*)")
+		.single();
+	if (error) throw new Error(error.message);
+	return data as TenantInvitationRecord;
+}
+
+export async function listPendingTenantInvitationsByEmail(email: string) {
+	const { data, error } = await admin()
+		.from("tenant_invitations")
+		.select("*, tenant:tenants(*), invited_by_profile:profiles!tenant_invitations_invited_by_profile_id_fkey(*)")
+		.ilike("invited_email", normalizeEmail(email))
+		.eq("status", "pending")
+		.order("created_at", { ascending: true });
+	if (error) throw new Error(error.message);
+	return (data as TenantInvitationRecord[]) ?? [];
+}
+
+export async function listTenantInvitationsByTenantId(tenantId: string) {
+	const { data, error } = await admin()
+		.from("tenant_invitations")
+		.select("*, tenant:tenants(*), invited_by_profile:profiles!tenant_invitations_invited_by_profile_id_fkey(*)")
+		.eq("tenant_id", tenantId)
+		.order("created_at", { ascending: false });
+	if (error) throw new Error(error.message);
+	return (data as TenantInvitationRecord[]) ?? [];
+}
+
+export async function getTenantInvitationById(invitationId: string) {
+	const { data, error } = await admin()
+		.from("tenant_invitations")
+		.select("*, tenant:tenants(*), invited_by_profile:profiles!tenant_invitations_invited_by_profile_id_fkey(*)")
+		.eq("id", invitationId)
+		.maybeSingle();
+	if (error) throw new Error(error.message);
+	return (data as TenantInvitationRecord | null) ?? null;
+}
+
+export async function updateTenantInvitation(input: {
+	invitationId: string;
+	status?: TenantInvitationRecord["status"];
+	acceptedByProfileId?: string | null;
+	acceptedAt?: string | null;
+	revokedAt?: string | null;
+	expiresAt?: string | null;
+	permissionSnapshot?: TenantPermission[];
+	targetRole?: TenantRole;
+}) {
+	const updates: Record<string, unknown> = {};
+	if (input.status) updates.status = input.status;
+	if ("acceptedByProfileId" in input) {
+		updates.accepted_by_profile_id = input.acceptedByProfileId ?? null;
+	}
+	if ("acceptedAt" in input) updates.accepted_at = input.acceptedAt ?? null;
+	if ("revokedAt" in input) updates.revoked_at = input.revokedAt ?? null;
+	if ("expiresAt" in input) updates.expires_at = input.expiresAt ?? null;
+	if (input.permissionSnapshot) updates.permission_snapshot = input.permissionSnapshot;
+	if (input.targetRole) updates.target_role = input.targetRole;
+
+	const { data, error } = await admin()
+		.from("tenant_invitations")
+		.update(updates)
+		.eq("id", input.invitationId)
+		.select("*, tenant:tenants(*), invited_by_profile:profiles!tenant_invitations_invited_by_profile_id_fkey(*)")
+		.single();
+	if (error) throw new Error(error.message);
+	return data as TenantInvitationRecord;
 }
 
 export async function upsertStaffMembership(input: {

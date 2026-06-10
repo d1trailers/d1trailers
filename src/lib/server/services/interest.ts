@@ -6,6 +6,7 @@ import {
 	createTimelineItem,
 	getTenantByPrimaryEmail,
 } from "@/lib/server/repos/platform";
+import { ensureOwnerInvitationForTenant } from "@/lib/server/services/accounts";
 import { sendTransactionalEmail } from "@/lib/server/services/communications";
 
 export async function submitInterest(rawInput: unknown) {
@@ -15,6 +16,11 @@ export async function submitInterest(rawInput: unknown) {
 	if (!tenant) {
 		tenant = await createLeadTenant(input);
 	}
+
+	await ensureOwnerInvitationForTenant({
+		tenantId: tenant.id,
+		primaryEmail: tenant.primary_email,
+	});
 
 	const interest = await createInterestSubmission(tenant.id, input);
 

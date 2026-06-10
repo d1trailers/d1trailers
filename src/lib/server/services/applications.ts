@@ -20,6 +20,7 @@ import {
 	uploadApplicationFile,
 	getApplicationById,
 } from "@/lib/server/repos/platform";
+import { ensureOwnerInvitationForTenant } from "@/lib/server/services/accounts";
 import { sendTransactionalEmail } from "@/lib/server/services/communications";
 import type { UserContext } from "@/lib/server/services/access";
 
@@ -141,6 +142,11 @@ export async function submitApplication(formData: FormData) {
 	} else {
 		tenant = await updateTenantStatus(tenant.id, "applied");
 	}
+
+	await ensureOwnerInvitationForTenant({
+		tenantId: tenant.id,
+		primaryEmail: tenant.primary_email,
+	});
 
 	const application = await createApplication({
 		tenantId: tenant.id,

@@ -3,7 +3,7 @@ import { type EmailOtpType } from "@supabase/supabase-js";
 import { NextResponse, type NextRequest } from "next/server";
 import { env } from "@/lib/server/env";
 import {
-	getUserContextByIdentity,
+	reconcileUserContextByIdentity,
 	resolvePostLoginDestination,
 } from "@/lib/server/services/access";
 
@@ -85,7 +85,7 @@ export async function GET(request: NextRequest) {
 		return NextResponse.redirect(new URL("/login/expired?reason=invalid", env.APP_BASE_URL));
 	}
 
-	const context = await getUserContextByIdentity({
+	const context = await reconcileUserContextByIdentity({
 		userId: user.id,
 		email: user.email,
 	});

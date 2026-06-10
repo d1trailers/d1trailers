@@ -3,7 +3,9 @@ import { env, getStaffBootstrapEmails } from "@/lib/server/env";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
 	getProfileByEmail,
-	getTenantByPrimaryEmail,
+	getStaffMembershipByProfileId,
+	getTenantMembershipsByProfileId,
+	listPendingTenantInvitationsByEmail,
 } from "@/lib/server/repos/platform";
 
 const emailSchema = z.string().trim().email();
@@ -18,12 +20,30 @@ async function isEligibleForLogin(email: string) {
 		return true;
 	}
 
-	const [profile, tenant] = await Promise.all([
+	const [profile, invitations] = await Promise.all([
 		getProfileByEmail(email),
-		getTenantByPrimaryEmail(email),
+		listPendingTenantInvitationsByEmail(email),
 	]);
 
-	return Boolean(profile || tenant);
+	const activeInvitations = invitations.filter(
+		(invitation) =>
+			!invitation.expires_at || new Date(invitation.expires_at).getTime() >= Date.now()
+	);
+
+	if (activeInvitations.length) {
+		return true;
+	}
+
+	if (!profile) {
+		return false;
+	}
+
+	const [staffMembership, tenantMemberships] = await Promise.all([
+		getStaffMembershipByProfileId(profile.id),
+		getTenantMembershipsByProfileId(profile.id),
+	]);
+
+	return Boolean(staffMembership || tenantMemberships.length);
 }
 
 export async function requestLoginLink(rawEmail: unknown) {
