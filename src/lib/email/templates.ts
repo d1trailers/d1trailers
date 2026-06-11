@@ -146,6 +146,34 @@ export function buildTimelineUpdateEmail(input: {
 	return { subject, html, text };
 }
 
+export function buildTenantMessageEmail(input: {
+	firstName: string;
+	companyName: string;
+	subjectLine: string;
+	message: string;
+}) {
+	const subject = `Update from D1Trailers: ${input.subjectLine}`;
+	const html = wrapHtml(`
+		<p>Hi ${input.firstName},</p>
+		<p>We have an update for${input.companyName ? ` ${input.companyName}` : " your account"}.</p>
+		<p><strong>${input.subjectLine}</strong></p>
+		<p>${input.message}</p>
+		<p>If you have any questions, reply to this message or contact D1Trailers directly.</p>
+	`);
+	const text = [
+		`Hi ${input.firstName},`,
+		"",
+		`We have an update for${input.companyName ? ` ${input.companyName}` : " your account"}.`,
+		input.subjectLine,
+		input.message,
+		"If you have any questions, reply to this message or contact D1Trailers directly.",
+		"",
+		"D1Trailers",
+	].join("\n");
+
+	return { subject, html, text };
+}
+
 export function buildPortalAccessEmail(input: {
 	tenantName: string;
 	inviterName?: string | null;

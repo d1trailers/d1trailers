@@ -11,6 +11,7 @@ export async function sendTransactionalEmail(input: {
 		| "feedback_requested"
 		| "application_approved"
 		| "timeline_update"
+		| "tenant_message"
 		| "billing_notice"
 		| "portal_access";
 	recipientEmail: string;

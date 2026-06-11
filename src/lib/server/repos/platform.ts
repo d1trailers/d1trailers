@@ -83,6 +83,9 @@ export type CommunicationEventRecord = {
 	provider: string | null;
 	provider_message_id: string | null;
 	error_message: string | null;
+	payload_snapshot?: Record<string, unknown>;
+	sent_at?: string | null;
+	created_at?: string;
 };
 
 export type ApplicationRecord = {
@@ -282,6 +285,15 @@ export async function getTenantById(tenantId: string) {
 		.maybeSingle();
 	if (error) throw new Error(error.message);
 	return (data as TenantRecord | null) ?? null;
+}
+
+export async function listTenants() {
+	const { data, error } = await admin()
+		.from("tenants")
+		.select("*")
+		.order("updated_at", { ascending: false });
+	if (error) throw new Error(error.message);
+	return (data as TenantRecord[]) ?? [];
 }
 
 export async function createLeadTenant(input: InterestSubmissionInput) {
@@ -618,6 +630,21 @@ export async function listTimelineItemsByTenantId(tenantId: string) {
 	return (data as TimelineItemRecord[]) ?? [];
 }
 
+export async function listTimelineItemsByTenantIds(tenantIds: string[]) {
+	if (!tenantIds.length) {
+		return [] as TimelineItemRecord[];
+	}
+
+	const { data, error } = await admin()
+		.from("timeline_items")
+		.select("*")
+		.in("tenant_id", tenantIds)
+		.order("sort_order", { ascending: true })
+		.order("created_at", { ascending: true });
+	if (error) throw new Error(error.message);
+	return (data as TimelineItemRecord[]) ?? [];
+}
+
 export async function listTimelineItemsByApplicationId(applicationId: string) {
 	const { data, error } = await admin()
 		.from("timeline_items")
@@ -770,11 +797,51 @@ export async function listApplicationsByTenantId(tenantId: string) {
 	);
 }
 
+export async function listDetailedApplicationsByTenantId(tenantId: string) {
+	const { data, error } = await admin()
+		.from("applications")
+		.select("*, documents:application_documents(*), timeline_items(*)")
+		.eq("tenant_id", tenantId)
+		.order("submitted_at", { ascending: false });
+	if (error) throw new Error(error.message);
+
+	const rows = await addSignedUrlsToDocuments((data ?? []) as any[]);
+	return rows.map((row) => sortTimelineItems(row as any));
+}
+
+export async function listApplicationsByTenantIds(tenantIds: string[]) {
+	if (!tenantIds.length) {
+		return [] as ApplicationRecord[];
+	}
+
+	const { data, error } = await admin()
+		.from("applications")
+		.select("*")
+		.in("tenant_id", tenantIds)
+		.order("submitted_at", { ascending: false });
+	if (error) throw new Error(error.message);
+	return (data as ApplicationRecord[]) ?? [];
+}
+
 export async function listRentalsByTenantId(tenantId: string) {
 	const { data, error } = await admin()
 		.from("rentals")
 		.select("*, assignments(*, trailer:trailers(*))")
 		.eq("tenant_id", tenantId)
+		.order("created_at", { ascending: false });
+	if (error) throw new Error(error.message);
+	return data ?? [];
+}
+
+export async function listRentalsByTenantIds(tenantIds: string[]) {
+	if (!tenantIds.length) {
+		return [] as any[];
+	}
+
+	const { data, error } = await admin()
+		.from("rentals")
+		.select("*")
+		.in("tenant_id", tenantIds)
 		.order("created_at", { ascending: false });
 	if (error) throw new Error(error.message);
 	return data ?? [];
@@ -787,6 +854,30 @@ export async function listApplications() {
 		.order("submitted_at", { ascending: false });
 	if (error) throw new Error(error.message);
 	return addSignedUrlsToDocuments((data ?? []) as any[]);
+}
+
+export async function listCommunicationEventsByTenantId(tenantId: string) {
+	const { data, error } = await admin()
+		.from("communication_events")
+		.select("*")
+		.eq("tenant_id", tenantId)
+		.order("created_at", { ascending: false });
+	if (error) throw new Error(error.message);
+	return (data as CommunicationEventRecord[]) ?? [];
+}
+
+export async function listCommunicationEventsByTenantIds(tenantIds: string[]) {
+	if (!tenantIds.length) {
+		return [] as CommunicationEventRecord[];
+	}
+
+	const { data, error } = await admin()
+		.from("communication_events")
+		.select("*")
+		.in("tenant_id", tenantIds)
+		.order("created_at", { ascending: false });
+	if (error) throw new Error(error.message);
+	return (data as CommunicationEventRecord[]) ?? [];
 }
 
 export async function getApplicationById(applicationId: string) {
