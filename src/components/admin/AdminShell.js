@@ -19,7 +19,7 @@ export default function AdminShell({ adminEmail, children }) {
 		<div className="w-full min-h-screen mt-25 p-5 md:px-10 lg:px-14 pb-10 motion-enter">
 			<div className="grid grid-cols-1 lg:grid-cols-[240px_1fr] gap-6">
 				<aside className="surface-panel rounded-2xl p-5 h-fit">
-					<div className="flex items-start justify-between gap-3">
+					<div className="flex-col items-start gap-5">
 						<div>
 							<p className="text-sm text-neutral-600 dark:text-neutral-400">
 								Admin
@@ -28,7 +28,6 @@ export default function AdminShell({ adminEmail, children }) {
 								{adminEmail}
 							</p>
 						</div>
-						<LogoutButton className="rounded-lg border border-(--border-soft) px-3 py-2 text-xs font-semibold text-neutral-700 transition hover:bg-neutral-100 dark:text-neutral-200 dark:hover:bg-neutral-900" />
 					</div>
 					<nav className="mt-5 flex flex-col gap-2">
 						{NAV_ITEMS.map((item) => {
@@ -49,6 +48,7 @@ export default function AdminShell({ adminEmail, children }) {
 								</Link>
 							);
 						})}
+						<LogoutButton className="w-full text-left rounded-lg border border-(--border-soft) px-3 py-2 text-sm font-semibold text-neutral-700 transition hover:bg-neutral-100 dark:text-neutral-200 dark:hover:bg-neutral-900" />
 					</nav>
 				</aside>
 
