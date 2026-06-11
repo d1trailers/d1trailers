@@ -3,11 +3,11 @@ import { interestSubmissionSchema } from "@/lib/contracts/interest";
 import {
 	createLeadTenant,
 	createInterestSubmission,
-	createTimelineItem,
 	getTenantByPrimaryEmail,
 } from "@/lib/server/repos/platform";
 import { ensureOwnerInvitationForTenant } from "@/lib/server/services/accounts";
 import { sendTransactionalEmail } from "@/lib/server/services/communications";
+import { syncJourneyAfterInterest } from "@/lib/server/services/journey";
 
 export async function submitInterest(rawInput: unknown) {
 	const input = interestSubmissionSchema.parse(rawInput);
@@ -24,16 +24,10 @@ export async function submitInterest(rawInput: unknown) {
 
 	const interest = await createInterestSubmission(tenant.id, input);
 
-	await createTimelineItem({
+	await syncJourneyAfterInterest({
 		tenantId: tenant.id,
-		type: "milestone",
-		title: "Interest received",
 		description:
-			"Our team received your request and will review the details shortly.",
-		visibleToTenant: false,
-		metadata: {
-			interestSubmissionId: interest.id,
-		},
+			"Our team received your request and will review the details shortly. If you are ready, you can complete the full application at any time.",
 	});
 
 	const emailContent = buildInterestReceivedEmail({

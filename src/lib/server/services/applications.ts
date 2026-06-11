@@ -12,7 +12,6 @@ import {
 import {
 	createApplication,
 	createApplicationDocument,
-	createTimelineItem,
 	createTenant,
 	getTenantByPrimaryEmail,
 	updateApplicationReview,
@@ -23,6 +22,10 @@ import {
 import { ensureOwnerInvitationForTenant } from "@/lib/server/services/accounts";
 import { sendTransactionalEmail } from "@/lib/server/services/communications";
 import type { UserContext } from "@/lib/server/services/access";
+import {
+	syncJourneyAfterApplicationReview,
+	syncJourneyAfterApplicationSubmission,
+} from "@/lib/server/services/journey";
 
 const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
 const ALLOWED_FILE_TYPES = new Set([
@@ -153,14 +156,8 @@ export async function submitApplication(formData: FormData) {
 		payload,
 	});
 
-	await createTimelineItem({
-		tenantId: tenant.id,
-		applicationId: application.id,
-		type: "milestone",
-		title: "Application submitted",
-		description:
-			"Your application has been received and is now waiting for review.",
-		visibleToTenant: true,
+	await syncJourneyAfterApplicationSubmission({
+		application,
 	});
 
 	await Promise.all(
@@ -235,17 +232,14 @@ export async function reviewApplication(input: {
 
 	await updateTenantStatus(application.tenant_id, nextStatus);
 
-	if (nextStatus === "approved") {
-		await createTimelineItem({
-			tenantId: application.tenant_id,
-			applicationId: application.id,
-			type: "milestone",
-			title: "Application approved",
-			description:
-				"Your application has been approved. The next steps will be shared shortly.",
-			visibleToTenant: true,
-		});
+	await syncJourneyAfterApplicationReview({
+		application,
+		nextStatus,
+		reviewNotes: input.reviewNotes,
+		actorProfileId: input.actorContext.userId,
+	});
 
+	if (nextStatus === "approved") {
 		const emailContent = buildApplicationApprovedEmail({
 			firstName: application.owner_first_name,
 			companyName: application.company_name,
@@ -267,17 +261,6 @@ export async function reviewApplication(input: {
 	}
 
 	if (nextStatus === "feedback_requested") {
-		await createTimelineItem({
-			tenantId: application.tenant_id,
-			applicationId: application.id,
-			type: "action_required",
-			title: "Additional information requested",
-			description:
-				input.reviewNotes ||
-				"Our team needs more information before the application can move forward.",
-			visibleToTenant: true,
-		});
-
 		const emailContent = buildFeedbackRequestedEmail({
 			firstName: application.owner_first_name,
 			companyName: application.company_name,

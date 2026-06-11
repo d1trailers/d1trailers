@@ -116,6 +116,36 @@ export function buildFeedbackRequestedEmail(input: {
 	return { subject, html, text };
 }
 
+export function buildTimelineUpdateEmail(input: {
+	firstName: string;
+	companyName: string;
+	title: string;
+	description?: string | null;
+}) {
+	const subject = `Update from D1Trailers: ${input.title}`;
+	const html = wrapHtml(`
+		<p>Hi ${input.firstName},</p>
+		<p>We posted a new update for${input.companyName ? ` ${input.companyName}` : " your account"}.</p>
+		<p><strong>${input.title}</strong></p>
+		${input.description ? `<p>${input.description}</p>` : ""}
+		<p>Sign in to your D1Trailers account to review the latest step in your timeline.</p>
+	`);
+	const text = [
+		`Hi ${input.firstName},`,
+		"",
+		`We posted a new update for${input.companyName ? ` ${input.companyName}` : " your account"}.`,
+		input.title,
+		input.description || null,
+		"Sign in to your D1Trailers account to review the latest step in your timeline.",
+		"",
+		"D1Trailers",
+	]
+		.filter(Boolean)
+		.join("\n");
+
+	return { subject, html, text };
+}
+
 export function buildPortalAccessEmail(input: {
 	tenantName: string;
 	inviterName?: string | null;

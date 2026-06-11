@@ -108,6 +108,9 @@ export type TimelineItemRecord = {
 	id: string;
 	tenant_id: string;
 	type: string;
+	item_key: string | null;
+	stage: "current" | "upcoming" | "completed";
+	sort_order: number;
 	title: string;
 	description: string | null;
 	visible_to_tenant: boolean;
@@ -115,6 +118,9 @@ export type TimelineItemRecord = {
 	completed_at: string | null;
 	cta_label: string | null;
 	cta_url: string | null;
+	application_id?: string | null;
+	created_by_profile_id?: string | null;
+	updated_by_profile_id?: string | null;
 	metadata: Record<string, unknown>;
 	created_at: string;
 };
@@ -542,10 +548,28 @@ async function addSignedUrlsToDocuments<T extends { documents?: ApplicationDocum
 	);
 }
 
+function sortTimelineItems<T extends { timeline_items?: TimelineItemRecord[] }>(row: T) {
+	const timelineItems = Array.isArray(row.timeline_items) ? [...row.timeline_items] : [];
+	timelineItems.sort((left, right) => {
+		if ((left.sort_order ?? 100) !== (right.sort_order ?? 100)) {
+			return (left.sort_order ?? 100) - (right.sort_order ?? 100);
+		}
+		return String(left.created_at).localeCompare(String(right.created_at));
+	});
+
+	return {
+		...row,
+		timeline_items: timelineItems,
+	};
+}
+
 export async function createTimelineItem(input: {
 	tenantId: string;
 	applicationId?: string | null;
 	type: "milestone" | "action_required" | "message";
+	itemKey?: string | null;
+	stage?: "current" | "upcoming" | "completed";
+	sortOrder?: number;
 	title: string;
 	description?: string | null;
 	visibleToTenant?: boolean;
@@ -553,6 +577,8 @@ export async function createTimelineItem(input: {
 	completedAt?: string | null;
 	ctaLabel?: string | null;
 	ctaUrl?: string | null;
+	createdByProfileId?: string | null;
+	updatedByProfileId?: string | null;
 	metadata?: Record<string, unknown>;
 }) {
 	const { data, error } = await admin()
@@ -561,6 +587,9 @@ export async function createTimelineItem(input: {
 			tenant_id: input.tenantId,
 			application_id: input.applicationId ?? null,
 			type: input.type,
+			item_key: input.itemKey ?? null,
+			stage: input.stage ?? (input.completedAt ? "completed" : "upcoming"),
+			sort_order: input.sortOrder ?? 100,
 			title: input.title,
 			description: input.description ?? null,
 			visible_to_tenant: input.visibleToTenant ?? true,
@@ -568,6 +597,8 @@ export async function createTimelineItem(input: {
 			completed_at: input.completedAt ?? null,
 			cta_label: input.ctaLabel ?? null,
 			cta_url: input.ctaUrl ?? null,
+			created_by_profile_id: input.createdByProfileId ?? null,
+			updated_by_profile_id: input.updatedByProfileId ?? null,
 			metadata: input.metadata ?? {},
 		})
 		.select("*")
@@ -581,9 +612,149 @@ export async function listTimelineItemsByTenantId(tenantId: string) {
 		.select("*")
 		.eq("tenant_id", tenantId)
 		.eq("visible_to_tenant", true)
+		.order("sort_order", { ascending: true })
 		.order("created_at", { ascending: true });
 	if (error) throw new Error(error.message);
 	return (data as TimelineItemRecord[]) ?? [];
+}
+
+export async function listTimelineItemsByApplicationId(applicationId: string) {
+	const { data, error } = await admin()
+		.from("timeline_items")
+		.select("*")
+		.eq("application_id", applicationId)
+		.order("sort_order", { ascending: true })
+		.order("created_at", { ascending: true });
+	if (error) throw new Error(error.message);
+	return (data as TimelineItemRecord[]) ?? [];
+}
+
+export async function getTimelineItemByKey(input: {
+	tenantId: string;
+	applicationId?: string | null;
+	itemKey: string;
+}) {
+	const query = admin()
+		.from("timeline_items")
+		.select("*")
+		.eq("tenant_id", input.tenantId)
+		.eq("item_key", input.itemKey);
+
+	if (input.applicationId) {
+		query.eq("application_id", input.applicationId);
+	} else {
+		query.is("application_id", null);
+	}
+
+	const { data, error } = await query.maybeSingle();
+	if (error) throw new Error(error.message);
+	return (data as TimelineItemRecord | null) ?? null;
+}
+
+export async function updateTimelineItem(input: {
+	timelineItemId: string;
+	type?: "milestone" | "action_required" | "message";
+	stage?: "current" | "upcoming" | "completed";
+	title?: string;
+	description?: string | null;
+	visibleToTenant?: boolean;
+	dueAt?: string | null;
+	completedAt?: string | null;
+	ctaLabel?: string | null;
+	ctaUrl?: string | null;
+	sortOrder?: number;
+	metadata?: Record<string, unknown>;
+	updatedByProfileId?: string | null;
+}) {
+	const updates: Record<string, unknown> = {};
+	if (input.type) updates.type = input.type;
+	if (input.stage) updates.stage = input.stage;
+	if ("title" in input) updates.title = input.title;
+	if ("description" in input) updates.description = input.description ?? null;
+	if ("visibleToTenant" in input) updates.visible_to_tenant = input.visibleToTenant;
+	if ("dueAt" in input) updates.due_at = input.dueAt ?? null;
+	if ("completedAt" in input) updates.completed_at = input.completedAt ?? null;
+	if ("ctaLabel" in input) updates.cta_label = input.ctaLabel ?? null;
+	if ("ctaUrl" in input) updates.cta_url = input.ctaUrl ?? null;
+	if ("sortOrder" in input) updates.sort_order = input.sortOrder;
+	if ("metadata" in input) updates.metadata = input.metadata ?? {};
+	if ("updatedByProfileId" in input) {
+		updates.updated_by_profile_id = input.updatedByProfileId ?? null;
+	}
+
+	const { data, error } = await admin()
+		.from("timeline_items")
+		.update(updates)
+		.eq("id", input.timelineItemId)
+		.select("*")
+		.single();
+	return assertData(data as TimelineItemRecord | null, error);
+}
+
+export async function upsertTimelineItemByKey(input: {
+	tenantId: string;
+	applicationId?: string | null;
+	itemKey: string;
+	type: "milestone" | "action_required" | "message";
+	stage?: "current" | "upcoming" | "completed";
+	title: string;
+	description?: string | null;
+	visibleToTenant?: boolean;
+	dueAt?: string | null;
+	completedAt?: string | null;
+	ctaLabel?: string | null;
+	ctaUrl?: string | null;
+	sortOrder?: number;
+	metadata?: Record<string, unknown>;
+	createdByProfileId?: string | null;
+	updatedByProfileId?: string | null;
+}) {
+	const existing = await getTimelineItemByKey({
+		tenantId: input.tenantId,
+		applicationId: input.applicationId ?? null,
+		itemKey: input.itemKey,
+	});
+
+	if (existing) {
+		return updateTimelineItem({
+			timelineItemId: existing.id,
+			type: input.type,
+			stage: input.stage,
+			title: input.title,
+			description: input.description ?? null,
+			visibleToTenant: input.visibleToTenant ?? existing.visible_to_tenant,
+			dueAt: input.dueAt ?? existing.due_at,
+			completedAt:
+				"completedAt" in input ? input.completedAt ?? null : existing.completed_at,
+			ctaLabel: input.ctaLabel ?? existing.cta_label,
+			ctaUrl: input.ctaUrl ?? existing.cta_url,
+			sortOrder: input.sortOrder ?? existing.sort_order,
+			metadata: {
+				...(existing.metadata ?? {}),
+				...(input.metadata ?? {}),
+			},
+			updatedByProfileId: input.updatedByProfileId ?? null,
+		});
+	}
+
+	return createTimelineItem({
+		tenantId: input.tenantId,
+		applicationId: input.applicationId ?? null,
+		itemKey: input.itemKey,
+		type: input.type,
+		stage: input.stage,
+		title: input.title,
+		description: input.description ?? null,
+		visibleToTenant: input.visibleToTenant ?? true,
+		dueAt: input.dueAt ?? null,
+		completedAt: input.completedAt ?? null,
+		ctaLabel: input.ctaLabel ?? null,
+		ctaUrl: input.ctaUrl ?? null,
+		sortOrder: input.sortOrder ?? 100,
+		metadata: input.metadata ?? {},
+		createdByProfileId: input.createdByProfileId ?? null,
+		updatedByProfileId: input.updatedByProfileId ?? null,
+	});
 }
 
 export async function listApplicationsByTenantId(tenantId: string) {
@@ -621,13 +792,13 @@ export async function listApplications() {
 export async function getApplicationById(applicationId: string) {
 	const { data, error } = await admin()
 		.from("applications")
-		.select("*, tenant:tenants(*), documents:application_documents(*)")
+		.select("*, tenant:tenants(*), documents:application_documents(*), timeline_items(*)")
 		.eq("id", applicationId)
 		.maybeSingle();
 	if (error) throw new Error(error.message);
 	if (!data) return null;
 	const [row] = await addSignedUrlsToDocuments([data as any]);
-	return row;
+	return sortTimelineItems(row as any);
 }
 
 export async function updateApplicationReview(input: {

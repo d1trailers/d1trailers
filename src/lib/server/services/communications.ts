@@ -10,6 +10,7 @@ export async function sendTransactionalEmail(input: {
 		| "application_received"
 		| "feedback_requested"
 		| "application_approved"
+		| "timeline_update"
 		| "billing_notice"
 		| "portal_access";
 	recipientEmail: string;
