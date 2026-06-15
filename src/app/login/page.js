@@ -17,12 +17,14 @@ export default function Login() {
 	const [loading, setLoading] = useState(false);
 	const [sent, setSent] = useState(false);
 	const [error, setError] = useState("");
+	const [actionLink, setActionLink] = useState("");
 
 	async function handleSubmit(event) {
 		event.preventDefault();
 		setLoading(true);
 		setError("");
 		setSent(false);
+		setActionLink("");
 
 		try {
 			const response = await fetch("/api/auth/request-login-link", {
@@ -46,6 +48,7 @@ export default function Login() {
 				return;
 			}
 
+			setActionLink(typeof json?.actionLink === "string" ? json.actionLink : "");
 			setSent(true);
 			setLoading(false);
 		} catch {
@@ -104,6 +107,25 @@ export default function Login() {
 						<p className="text-sm text-neutral-600 dark:text-neutral-400">
 							If this email is recognized in the system, a secure login link has been sent.
 						</p>
+						{actionLink ? (
+							<div className="rounded-2xl border border-amber-300 bg-amber-50 p-4 text-left dark:border-amber-800/60 dark:bg-amber-950/20">
+								<p className="text-sm font-semibold text-amber-900 dark:text-amber-100">
+									Temporary login link
+								</p>
+								<p className="mt-2 text-sm text-amber-800 dark:text-amber-200">
+									Email delivery is not active yet, so you can use this access link directly for now.
+								</p>
+								<a
+									href={actionLink}
+									className="mt-4 inline-flex w-full items-center justify-center rounded-xl bg-(--branding-700) px-4 py-3 text-sm font-bold text-neutral-50 transition hover:bg-(--branding-800)"
+								>
+									Open Login Link
+								</a>
+								<p className="mt-3 break-all rounded-xl bg-white/80 px-3 py-2 font-mono text-xs text-neutral-700 dark:bg-neutral-950/60 dark:text-neutral-200">
+									{actionLink}
+								</p>
+							</div>
+						) : null}
 					</div>
 				)}
 			</Card>

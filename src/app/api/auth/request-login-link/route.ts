@@ -14,12 +14,13 @@ function getErrorStatus(error: unknown) {
 export async function POST(request: Request) {
 	try {
 		const body = await request.json();
-		await requestLoginLink(body?.email);
+		const result = await requestLoginLink(body?.email);
 
 		return Response.json(
 			{
 				message:
 					"If this email is recognized in the system, a secure login link has been generated.",
+				actionLink: result?.actionLink ?? null,
 			},
 			{ status: 200 }
 		);
