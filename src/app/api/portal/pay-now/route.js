@@ -5,7 +5,7 @@ export async function POST() {
 	if (auth.error) return auth.error;
 
 	return Response.json(
-		{ message: "Pay Now is wired on the new platform, but live Stripe actions remain temporarily disabled." },
+		{ message: "Payment is unavailable right now." },
 		{ status: 200 },
 	);
 }

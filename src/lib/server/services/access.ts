@@ -34,13 +34,14 @@ export type UserContext = {
 	primaryTenantMembership: TenantMembershipContext | null;
 };
 
-const ACTIVE_PORTAL_TENANT_STATUSES = new Set(["active", "past_due", "suspended"]);
 const PORTAL_BASE_PERMISSIONS = new Set<TenantPermission>([
 	"view_rentals",
 	"view_documents",
 	"view_billing",
 	"view_timeline",
 	"manage_pickup",
+	"manage_rentals",
+	"manage_members",
 ]);
 const STAFF_BOOTSTRAP_EMAILS = new Set(getStaffBootstrapEmails());
 
@@ -104,6 +105,7 @@ export function getMembershipPermissions(membership: TenantMembershipContext | n
 			"view_billing",
 			"view_timeline",
 			"manage_pickup",
+			"manage_rentals",
 			"manage_members",
 		] satisfies TenantPermission[];
 	}
@@ -122,8 +124,16 @@ export function canManageMembers(membership: TenantMembershipContext | null) {
 	return hasTenantPermission(membership, "manage_members");
 }
 
+export function canManageRentals(membership: TenantMembershipContext | null) {
+	return hasTenantPermission(membership, "manage_rentals");
+}
+
 export function canAccessTimeline(membership: TenantMembershipContext | null) {
-	return hasTenantPermission(membership, "view_timeline");
+	return (
+		hasTenantPermission(membership, "view_timeline") ||
+		hasTenantPermission(membership, "manage_rentals") ||
+		hasTenantPermission(membership, "manage_members")
+	);
 }
 
 export function canAccessPortal(membership: TenantMembershipContext | null) {
@@ -139,25 +149,11 @@ export function resolveUnauthorizedDestination(scope: string) {
 export function resolveTenantDestination(membership: TenantMembershipContext | null) {
 	if (!membership) return resolveUnauthorizedDestination("account_access");
 
-	if (ACTIVE_PORTAL_TENANT_STATUSES.has(membership.tenant.status)) {
-		if (canAccessPortal(membership)) {
-			return "/portal";
-		}
-		if (canManageMembers(membership)) {
-			return "/account/users";
-		}
-		return resolveUnauthorizedDestination("portal");
+	if (canAccessPortal(membership) || canAccessTimeline(membership)) {
+		return "/portal/overview";
 	}
 
-	if (canAccessTimeline(membership)) {
-		return "/timeline";
-	}
-
-	if (canManageMembers(membership)) {
-		return "/account/users";
-	}
-
-	return resolveUnauthorizedDestination("timeline");
+	return resolveUnauthorizedDestination("portal");
 }
 
 async function buildUserContext(input: {

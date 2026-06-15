@@ -7,6 +7,7 @@ export const TENANT_PERMISSION_VALUES = [
 	"view_billing",
 	"view_timeline",
 	"manage_pickup",
+	"manage_rentals",
 	"manage_members",
 ] as const;
 
@@ -47,3 +48,13 @@ export const PORTAL_SECTION_PERMISSIONS = [
 	"view_timeline",
 	"manage_pickup",
 ] as const satisfies readonly TenantPermission[];
+
+export const TENANT_PERMISSION_LABELS: Record<TenantPermission, string> = {
+	view_rentals: "View rentals",
+	view_documents: "View documents",
+	view_billing: "View billing",
+	view_timeline: "View timeline",
+	manage_pickup: "Manage pickup",
+	manage_rentals: "Manage rentals",
+	manage_members: "Manage members",
+};

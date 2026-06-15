@@ -67,7 +67,6 @@ export default async function UnauthorizedPage({ searchParams }) {
 			<AccountSwitcher
 				memberships={accountContext.memberships}
 				activeTenantId={accountContext.activeTenantId}
-				showManageLink
 			/>
 		</div>
 	);

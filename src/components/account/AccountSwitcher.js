@@ -1,18 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import Link from "next/link";
-import {
-	ArrowPathIcon,
-	ChevronUpDownIcon,
-	UsersIcon,
-} from "@heroicons/react/24/outline";
+import { ArrowPathIcon, ChevronUpDownIcon } from "@heroicons/react/24/outline";
 
-export default function AccountSwitcher({
-	memberships,
-	activeTenantId,
-	showManageLink = false,
-}) {
+export default function AccountSwitcher({ memberships, activeTenantId }) {
 	const [selectedTenantId, setSelectedTenantId] = useState(activeTenantId ?? "");
 	const [loading, setLoading] = useState(false);
 	const [error, setError] = useState("");
@@ -48,7 +39,7 @@ export default function AccountSwitcher({
 			}
 
 			window.location.href =
-				typeof json?.destination === "string" ? json.destination : "/timeline";
+				typeof json?.destination === "string" ? json.destination : "/portal/overview";
 		} catch {
 			setError("Unable to switch accounts right now.");
 			setLoading(false);
@@ -68,15 +59,6 @@ export default function AccountSwitcher({
 						{activeMembership?.tenantName ?? "Select an account"}
 					</p>
 				</div>
-				{showManageLink && activeMembership?.canManageMembers ? (
-					<Link
-						href="/account/users"
-						className="inline-flex items-center gap-2 rounded-xl border border-(--border-soft) px-3 py-2 text-sm font-semibold text-neutral-900 transition hover:bg-neutral-100 dark:text-neutral-100 dark:hover:bg-neutral-900"
-					>
-						<UsersIcon className="h-4 w-4" aria-hidden="true" />
-						Manage Users
-					</Link>
-				) : null}
 			</div>
 
 			{memberships.length > 1 ? (
@@ -93,7 +75,7 @@ export default function AccountSwitcher({
 						>
 							{memberships.map((membership) => (
 								<option key={membership.tenantId} value={membership.tenantId}>
-									{membership.tenantName} • {membership.role === "account_owner" ? "Owner" : "User"}
+									{membership.tenantName} - {membership.role === "account_owner" ? "Owner" : "User"}
 								</option>
 							))}
 						</select>
@@ -120,3 +102,4 @@ export default function AccountSwitcher({
 		</div>
 	);
 }
+

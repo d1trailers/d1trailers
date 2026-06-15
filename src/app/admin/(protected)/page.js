@@ -43,7 +43,7 @@ export default function AdminOverviewPage() {
 	if (loading) {
 		return (
 			<div className="space-y-4">
-				<LoadingPanel title="Loading Overview" subtitle="Fetching tenant and application metrics." />
+				<LoadingPanel title="Loading Overview" />
 				<LoadingCardGrid count={4} />
 			</div>
 		);
@@ -56,10 +56,15 @@ export default function AdminOverviewPage() {
 	return (
 		<div className="space-y-4">
 			<div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-				<MetricCard label="Lead Tenants" value={data.leads ?? 0} hint="Interest submissions that have not applied yet" />
-				<MetricCard label="Applications In Review" value={data.applicationsInReview ?? 0} hint="Applied, under review, or feedback requested" />
-				<MetricCard label="Approved Awaiting Activation" value={data.approvedAwaitingActivation ?? 0} hint="Approved but not yet active" />
-				<MetricCard label="Active Tenants" value={data.activeTenants ?? 0} hint="Active, past due, or suspended accounts" />
+				<MetricCard label="Draft Rentals" value={data.draftRentals ?? 0} hint="Rental drafts still being prepared internally" />
+				<MetricCard label="Customer Review" value={data.customerReview ?? 0} hint="Proposals waiting on tenant review or decision" />
+				<MetricCard label="Changes Pending" value={data.changesPending ?? 0} hint="Tenant revisions waiting on staff review" />
+				<MetricCard label="Awaiting First Payment" value={data.awaitingFirstPayment ?? 0} hint="Accepted agreements waiting on activation payment" />
+			</div>
+			<div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+				<MetricCard label="Live Agreements" value={data.liveAgreements ?? 0} hint="Agreements currently in service" />
+				<MetricCard label="Billing Attention" value={data.billingAttention ?? 0} hint="Past-due or suspended agreements needing review" />
+				<MetricCard label="Stale Tenants" value={data.staleTenants ?? 0} hint="Accounts with no live agreements" />
 			</div>
 		</div>
 	);

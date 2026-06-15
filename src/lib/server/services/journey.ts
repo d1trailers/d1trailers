@@ -9,8 +9,10 @@ import {
 import { buildTimelineUpdateEmail } from "@/lib/email/templates";
 import {
 	getApplicationById,
+	getRentalById,
 	getTimelineItemByKey,
 	type ApplicationRecord,
+	type RentalRecord,
 	type TenantRecord,
 	type TimelineItemRecord,
 	updateTimelineItem,
@@ -22,6 +24,11 @@ import type { UserContext } from "@/lib/server/services/access";
 type JourneyApplication = ApplicationRecord & {
 	tenant?: TenantRecord;
 	payload?: Record<string, unknown>;
+};
+
+type JourneyRental = RentalRecord & {
+	tenant?: TenantRecord | null;
+	application?: ApplicationRecord | null;
 };
 
 function nowIso() {
@@ -76,7 +83,8 @@ function buildStandardJourneyItem(
 
 async function publishStandardJourneyItem(input: {
 	tenantId: string;
-	applicationId: string;
+	applicationId?: string | null;
+	rentalId?: string | null;
 	key: JourneyItemKey;
 	actorProfileId?: string | null;
 	stage?: TimelineStage;
@@ -99,7 +107,8 @@ async function publishStandardJourneyItem(input: {
 
 	return upsertTimelineItemByKey({
 		tenantId: input.tenantId,
-		applicationId: input.applicationId,
+		applicationId: input.applicationId ?? null,
+		rentalId: input.rentalId ?? null,
 		itemKey: item.itemKey,
 		type: item.type,
 		stage: item.stage,
@@ -119,7 +128,8 @@ async function publishStandardJourneyItem(input: {
 
 async function completeExistingJourneyItem(input: {
 	tenantId: string;
-	applicationId: string;
+	applicationId?: string | null;
+	rentalId?: string | null;
 	key: JourneyItemKey;
 	description?: string | null;
 	metadata?: Record<string, unknown>;
@@ -127,7 +137,8 @@ async function completeExistingJourneyItem(input: {
 }) {
 	const existing = await getTimelineItemByKey({
 		tenantId: input.tenantId,
-		applicationId: input.applicationId,
+		applicationId: input.applicationId ?? null,
+		rentalId: input.rentalId ?? null,
 		itemKey: input.key,
 	});
 
@@ -137,7 +148,8 @@ async function completeExistingJourneyItem(input: {
 
 	return publishStandardJourneyItem({
 		tenantId: input.tenantId,
-		applicationId: input.applicationId,
+		applicationId: input.applicationId ?? null,
+		rentalId: input.rentalId ?? null,
 		key: input.key,
 		stage: "completed",
 		description: input.description ?? existing.description ?? null,
@@ -162,6 +174,44 @@ async function sendTimelineUpdateNotice(input: {
 		recipientEmail: input.application.primary_email,
 		tenantId: input.application.tenant_id,
 		applicationId: input.application.id,
+		rentalId: input.timelineItem.rental_id ?? null,
+		subject: email.subject,
+		html: email.html,
+		text: email.text,
+		payloadSnapshot: {
+			timelineItemId: input.timelineItem.id,
+			itemKey: input.timelineItem.item_key,
+			stage: input.timelineItem.stage,
+		},
+	});
+}
+
+async function sendRentalTimelineUpdateNotice(input: {
+	rental: JourneyRental;
+	timelineItem: TimelineItemRecord;
+}) {
+	const email = buildTimelineUpdateEmail({
+		firstName:
+			input.rental.application?.owner_first_name ||
+			String(input.rental.application?.payload?.ownerFirstName || "").trim() ||
+			"there",
+		companyName:
+			input.rental.application?.company_name ||
+			input.rental.tenant?.display_name ||
+			"D1 Trailers",
+		title: input.timelineItem.title,
+		description: input.timelineItem.description,
+	});
+
+	await sendTransactionalEmail({
+		type: "timeline_update",
+		recipientEmail:
+			input.rental.application?.primary_email ||
+			input.rental.tenant?.primary_email ||
+			"",
+		tenantId: input.rental.tenant_id,
+		applicationId: input.rental.application_id,
+		rentalId: input.rental.id,
 		subject: email.subject,
 		html: email.html,
 		text: email.text,
@@ -198,6 +248,7 @@ export async function syncJourneyAfterInterest(input: {
 
 export async function syncJourneyAfterApplicationSubmission(input: {
 	application: JourneyApplication;
+	rentalId?: string | null;
 }) {
 	await upsertTimelineItemByKey({
 		tenantId: input.application.tenant_id,
@@ -212,30 +263,35 @@ export async function syncJourneyAfterApplicationSubmission(input: {
 		sortOrder: JOURNEY_ITEM_DEFINITIONS[JOURNEY_ITEM_KEYS.interestReceived].sortOrder,
 		metadata: {
 			applicationId: input.application.id,
+			rentalId: input.rentalId ?? null,
 		},
 	});
 
 	await publishStandardJourneyItem({
 		tenantId: input.application.tenant_id,
 		applicationId: input.application.id,
+		rentalId: input.rentalId ?? null,
 		key: JOURNEY_ITEM_KEYS.applicationSubmitted,
 		stage: "completed",
 		description:
 			"Your application is on file with D1Trailers and is ready for internal review.",
 		metadata: {
 			status: input.application.status,
+			rentalId: input.rentalId ?? null,
 		},
 	});
 
 	await publishStandardJourneyItem({
 		tenantId: input.application.tenant_id,
 		applicationId: input.application.id,
+		rentalId: input.rentalId ?? null,
 		key: JOURNEY_ITEM_KEYS.reviewInProgress,
 		stage: "current",
 		description:
 			"Our team is reviewing your application and documents. We'll let you know if anything else is needed.",
 		metadata: {
 			status: input.application.status,
+			rentalId: input.rentalId ?? null,
 		},
 	});
 }
@@ -479,6 +535,66 @@ export async function publishManualApplicationTimelineUpdate(input: {
 	if (payload.sendUpdateEmail && timelineItem.visible_to_tenant) {
 		await sendTimelineUpdateNotice({
 			application,
+			timelineItem,
+		});
+	}
+
+	return timelineItem;
+}
+
+export async function publishManualRentalTimelineUpdate(input: {
+	rentalId: string;
+	rawInput: unknown;
+	actorContext: UserContext;
+}) {
+	const rental = (await getRentalById(input.rentalId)) as JourneyRental | null;
+	if (!rental || !rental.tenant) {
+		throw new Error("Rental not found.");
+	}
+
+	const payload = manualTimelineUpdateSchema.parse(input.rawInput);
+	const key = payload.itemKey ?? `custom_${Date.now()}`;
+	const standardDefinition = payload.itemKey
+		? JOURNEY_ITEM_DEFINITIONS[payload.itemKey]
+		: null;
+	const stage = payload.stage;
+	const title = payload.title ?? standardDefinition?.title;
+
+	if (!title) {
+		throw new Error("A timeline title is required.");
+	}
+
+	const timelineItem = await upsertTimelineItemByKey({
+		tenantId: rental.tenant_id,
+		applicationId: rental.application_id ?? null,
+		rentalId: rental.id,
+		itemKey: key,
+		type: payload.type ?? standardDefinition?.type ?? "action_required",
+		stage,
+		title,
+		description: payload.description || null,
+		visibleToTenant: payload.visibleToTenant ?? true,
+		dueAt: payload.dueAt || null,
+		completedAt: stage === "completed" ? nowIso() : null,
+		ctaLabel: payload.ctaLabel || null,
+		ctaUrl: payload.ctaUrl || null,
+		sortOrder: standardDefinition?.sortOrder ?? 90,
+		metadata: {
+			manualUpdate: true,
+			itemKey: key,
+			rentalId: rental.id,
+		},
+		createdByProfileId: input.actorContext.userId,
+		updatedByProfileId: input.actorContext.userId,
+	});
+
+	if (
+		payload.sendUpdateEmail &&
+		timelineItem.visible_to_tenant &&
+		(rental.application?.primary_email || rental.tenant?.primary_email)
+	) {
+		await sendRentalTimelineUpdateNotice({
+			rental,
 			timelineItem,
 		});
 	}

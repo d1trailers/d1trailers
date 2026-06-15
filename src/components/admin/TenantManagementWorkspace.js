@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
 	BuildingOffice2Icon,
-	ChatBubbleLeftRightIcon,
 	ChevronRightIcon,
 	MagnifyingGlassIcon,
 	SparklesIcon,
@@ -15,32 +14,24 @@ import StateCard from "@/components/admin/StateCard";
 import StatusBadge from "@/components/admin/StatusBadge";
 import { LoadingCardGrid, LoadingPanel } from "@/components/ui/LoadingSkeleton";
 import TenantManagementModal from "@/components/admin/TenantManagementModal";
+import RentalManagementModal from "@/components/admin/RentalManagementModal";
+import TrailerManagementModal from "@/components/admin/TrailerManagementModal";
 import { JOURNEY_ITEM_KEYS } from "@/lib/contracts/journey";
 
 const GROUP_CONFIG = {
-	leads: {
-		label: "Lead Tenants",
-		description: "Interest submitted, but no full application yet.",
-		icon: SparklesIcon,
-	},
-	applicants: {
-		label: "Applicants",
-		description: "Applied, in review, or waiting on follow-up.",
-		icon: UsersIcon,
-	},
-	activation: {
-		label: "Approved + Activation",
-		description: "Approved accounts moving through next steps before live operations.",
-		icon: ChatBubbleLeftRightIcon,
-	},
-	live: {
-		label: "Live Accounts",
-		description: "Active, past due, or suspended operational tenants.",
+	active: {
+		label: "Active Accounts",
+		description: "Tenant accounts with at least one live agreement.",
 		icon: BuildingOffice2Icon,
 	},
-	closed: {
-		label: "Closed",
-		description: "Closed or archived tenant accounts.",
+	suspended: {
+		label: "Suspended Accounts",
+		description: "Tenant accounts currently suspended because of agreement-level billing issues.",
+		icon: UsersIcon,
+	},
+	stale: {
+		label: "Stale Accounts",
+		description: "Tenant accounts with no live agreements. Drafts and negotiations still live on their rentals.",
 		icon: SparklesIcon,
 	},
 	other: {
@@ -50,27 +41,7 @@ const GROUP_CONFIG = {
 	},
 };
 
-const TIMELINE_ACTIONS = {
-	timeline_sign_documents: {
-		subjectLine: "Sign your rental documents",
-		message:
-			"Review and sign the required rental documents so your trailer can be released.",
-		stage: "current",
-	},
-	timeline_review_contract: {
-		subjectLine: "Review your contract details",
-		message: "Review your rental contract details once the document packet is ready.",
-		stage: "upcoming",
-	},
-	timeline_pick_up_trailer: {
-		subjectLine: "Coordinate trailer pickup",
-		message:
-			"Coordinate pickup details once your documents and contract steps are complete.",
-		stage: "upcoming",
-	},
-};
-
-const TAB_IDS = new Set(["communications", "status", "billing", "documents"]);
+const TAB_IDS = new Set(["rentals", "trailers"]);
 
 function formatDate(value) {
 	if (!value) return "-";
@@ -79,26 +50,13 @@ function formatDate(value) {
 	return date.toLocaleString();
 }
 
-function buildCommunicationDraft(detail, actionKey = "general_update") {
-	const timelineConfig = TIMELINE_ACTIONS[actionKey] ?? null;
-	return {
-		actionKey,
-		subjectLine: timelineConfig
-			? timelineConfig.subjectLine
-			: `Account update for ${detail.tenant.display_name}`,
-		message: timelineConfig ? timelineConfig.message : "",
-		stage: timelineConfig ? timelineConfig.stage : "current",
-		sendEmail: true,
-	};
-}
-
 export default function TenantManagementWorkspace() {
 	const router = useRouter();
 	const searchParams = useSearchParams();
 	const initialTenantId = searchParams.get("tenant") || "";
 	const initialTab = TAB_IDS.has(searchParams.get("tab"))
 		? searchParams.get("tab")
-		: "communications";
+		: "rentals";
 
 	const [tenants, setTenants] = useState([]);
 	const [loading, setLoading] = useState(true);
@@ -109,19 +67,31 @@ export default function TenantManagementWorkspace() {
 	const [detailsByTenantId, setDetailsByTenantId] = useState({});
 	const [detailLoadingByTenantId, setDetailLoadingByTenantId] = useState({});
 	const [detailErrorByTenantId, setDetailErrorByTenantId] = useState({});
-	const [notesByTenantId, setNotesByTenantId] = useState({});
-	const [actionLoadingByTenantId, setActionLoadingByTenantId] = useState({});
-	const [actionErrorByTenantId, setActionErrorByTenantId] = useState({});
-	const [communicationDraftsByTenantId, setCommunicationDraftsByTenantId] = useState({});
-	const [communicationLoadingByTenantId, setCommunicationLoadingByTenantId] = useState({});
-	const [communicationErrorByTenantId, setCommunicationErrorByTenantId] = useState({});
-	const [communicationSuccessByTenantId, setCommunicationSuccessByTenantId] = useState({});
+	const [trailerCatalog, setTrailerCatalog] = useState([]);
 
-	function syncLocation(tenantId, tabId = "communications") {
+	const [rentalModalOpen, setRentalModalOpen] = useState(false);
+	const [rentalModalMode, setRentalModalMode] = useState("edit");
+	const [selectedRentalId, setSelectedRentalId] = useState("");
+	const [rentalDetail, setRentalDetail] = useState(null);
+	const [rentalDetailLoading, setRentalDetailLoading] = useState(false);
+	const [rentalDetailError, setRentalDetailError] = useState("");
+	const [rentalActionLoading, setRentalActionLoading] = useState(false);
+	const [rentalDeleteLoading, setRentalDeleteLoading] = useState(false);
+	const [rentalActionError, setRentalActionError] = useState("");
+
+	const [trailerModalOpen, setTrailerModalOpen] = useState(false);
+	const [selectedTrailerId, setSelectedTrailerId] = useState("");
+	const [trailerDetail, setTrailerDetail] = useState(null);
+	const [trailerDetailLoading, setTrailerDetailLoading] = useState(false);
+	const [trailerDetailError, setTrailerDetailError] = useState("");
+	const [trailerActionLoading, setTrailerActionLoading] = useState(false);
+	const [trailerActionError, setTrailerActionError] = useState("");
+
+	function syncLocation(tenantId, tabId = "rentals") {
 		const params = new URLSearchParams(searchParams.toString());
 		if (tenantId) {
 			params.set("tenant", tenantId);
-			if (tabId && tabId !== "communications") {
+			if (tabId && tabId !== "rentals") {
 				params.set("tab", tabId);
 			} else {
 				params.delete("tab");
@@ -133,16 +103,34 @@ export default function TenantManagementWorkspace() {
 		router.replace(`/admin/management${params.toString() ? `?${params.toString()}` : ""}`);
 	}
 
-	function selectTenant(tenantId, nextTab = "communications") {
+	function selectTenant(tenantId, nextTab = "rentals") {
 		setSelectedTenantId(tenantId);
 		setActiveTab(nextTab);
 		syncLocation(tenantId, nextTab);
 	}
 
+	function closeRentalModal() {
+		setRentalModalOpen(false);
+		setSelectedRentalId("");
+		setRentalDetail(null);
+		setRentalDetailError("");
+		setRentalActionError("");
+	}
+
+	function closeTrailerModal() {
+		setTrailerModalOpen(false);
+		setSelectedTrailerId("");
+		setTrailerDetail(null);
+		setTrailerDetailError("");
+		setTrailerActionError("");
+	}
+
 	function closeTenantModal() {
 		setSelectedTenantId("");
-		setActiveTab("communications");
-		syncLocation("", "communications");
+		setActiveTab("rentals");
+		closeRentalModal();
+		closeTrailerModal();
+		syncLocation("", "rentals");
 	}
 
 	async function loadTenants() {
@@ -154,7 +142,7 @@ export default function TenantManagementWorkspace() {
 				setError(
 					typeof json?.error === "string"
 						? json.error
-						: "Failed to load management tenants.",
+						: "Failed to load management tenants."
 				);
 				setLoading(false);
 				return;
@@ -172,6 +160,18 @@ export default function TenantManagementWorkspace() {
 			setError("Failed to load management tenants.");
 			setLoading(false);
 		}
+	}
+
+	async function loadTrailerCatalog() {
+		try {
+			const res = await fetch("/api/admin/trailers", { cache: "no-store" });
+			const json = await res.json().catch(() => []);
+			if (!res.ok) {
+				return;
+			}
+
+			setTrailerCatalog(Array.isArray(json) ? json : []);
+		} catch {}
 	}
 
 	async function loadTenantDetail(tenantId, { force = false } = {}) {
@@ -199,16 +199,6 @@ export default function TenantManagementWorkspace() {
 			}
 
 			setDetailsByTenantId((current) => ({ ...current, [tenantId]: json }));
-			setNotesByTenantId((current) => ({
-				...current,
-				[tenantId]: json.currentApplication?.review_notes || "",
-			}));
-			setCommunicationDraftsByTenantId((current) => ({
-				...current,
-				[tenantId]: current[tenantId] || buildCommunicationDraft(json),
-			}));
-			setCommunicationErrorByTenantId((current) => ({ ...current, [tenantId]: "" }));
-			setCommunicationSuccessByTenantId((current) => ({ ...current, [tenantId]: "" }));
 			setDetailLoadingByTenantId((current) => ({ ...current, [tenantId]: false }));
 		} catch {
 			setDetailErrorByTenantId((current) => ({
@@ -219,14 +209,64 @@ export default function TenantManagementWorkspace() {
 		}
 	}
 
+	async function loadRentalDetail(rentalId) {
+		if (!rentalId) return;
+		setRentalDetailLoading(true);
+		setRentalDetailError("");
+
+		try {
+			const res = await fetch(`/api/admin/rentals/${encodeURIComponent(rentalId)}`);
+			const json = await res.json().catch(() => ({}));
+			if (!res.ok) {
+				setRentalDetailError(
+					typeof json?.error === "string"
+						? json.error
+						: "Failed to load rental detail."
+				);
+				setRentalDetailLoading(false);
+				return;
+			}
+
+			setRentalDetail(json);
+			setRentalDetailLoading(false);
+		} catch {
+			setRentalDetailError("Failed to load rental detail.");
+			setRentalDetailLoading(false);
+		}
+	}
+
+	async function loadTrailerDetail(trailerId) {
+		if (!trailerId) return;
+		setTrailerDetailLoading(true);
+		setTrailerDetailError("");
+
+		try {
+			const res = await fetch(`/api/admin/trailers/${encodeURIComponent(trailerId)}`);
+			const json = await res.json().catch(() => ({}));
+			if (!res.ok) {
+				setTrailerDetailError(
+					typeof json?.error === "string"
+						? json.error
+						: "Failed to load trailer detail."
+				);
+				setTrailerDetailLoading(false);
+				return;
+			}
+
+			setTrailerDetail(json);
+			setTrailerDetailLoading(false);
+		} catch {
+			setTrailerDetailError("Failed to load trailer detail.");
+			setTrailerDetailLoading(false);
+		}
+	}
+
 	useEffect(() => {
 		const frame = window.requestAnimationFrame(() => {
-			void loadTenants();
+			void Promise.all([loadTenants(), loadTrailerCatalog()]);
 		});
 
-		return () => {
-			window.cancelAnimationFrame(frame);
-		};
+		return () => window.cancelAnimationFrame(frame);
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, []);
 
@@ -235,18 +275,15 @@ export default function TenantManagementWorkspace() {
 		const frame = window.requestAnimationFrame(() => {
 			void loadTenantDetail(selectedTenantId);
 		});
-		return () => {
-			window.cancelAnimationFrame(frame);
-		};
+		return () => window.cancelAnimationFrame(frame);
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [selectedTenantId]);
 
 	const filteredTenants = useMemo(() => {
 		const query = searchQuery.trim().toLowerCase();
 		if (!query) return tenants;
-
-		return tenants.filter((tenant) => {
-			return [
+		return tenants.filter((tenant) =>
+			[
 				tenant.displayName,
 				tenant.primaryEmail,
 				tenant.primaryPhone,
@@ -254,17 +291,15 @@ export default function TenantManagementWorkspace() {
 				tenant.latestApplication?.status,
 			]
 				.filter(Boolean)
-				.some((value) => String(value).toLowerCase().includes(query));
-		});
+				.some((value) => String(value).toLowerCase().includes(query))
+		);
 	}, [searchQuery, tenants]);
 
 	const groupedTenants = useMemo(() => {
 		const groups = {
-			leads: [],
-			applicants: [],
-			activation: [],
-			live: [],
-			closed: [],
+			active: [],
+			suspended: [],
+			stale: [],
 			other: [],
 		};
 
@@ -277,180 +312,275 @@ export default function TenantManagementWorkspace() {
 	}, [filteredTenants]);
 
 	const selectedDetail = selectedTenantId ? detailsByTenantId[selectedTenantId] || null : null;
-	const selectedNotes = notesByTenantId[selectedTenantId] || "";
-	const selectedDraft = communicationDraftsByTenantId[selectedTenantId] ||
-		(selectedDetail
-			? buildCommunicationDraft(selectedDetail)
-			: {
-					actionKey: "general_update",
-					subjectLine: "",
-					message: "",
-					stage: "current",
-					sendEmail: true,
-			  });
+	const availableTrailerOptions = trailerCatalog.filter((trailer) => trailer.status === "available");
 
 	async function refreshTenant(tenantId) {
-		await Promise.all([loadTenants(), loadTenantDetail(tenantId, { force: true })]);
+		await Promise.all([loadTenants(), loadTenantDetail(tenantId, { force: true }), loadTrailerCatalog()]);
 	}
 
-	async function handleSubmitStatusAction(action) {
-		const detail = selectedDetail;
-		const applicationId = detail?.currentApplication?.id;
-		if (!applicationId || !selectedTenantId) return;
+	function openCreateRentalModal() {
+		setRentalModalMode("create");
+		setSelectedRentalId("");
+		setRentalDetail(null);
+		setRentalActionError("");
+		setRentalModalOpen(true);
+	}
 
-		setActionLoadingByTenantId((current) => ({ ...current, [selectedTenantId]: action }));
-		setActionErrorByTenantId((current) => ({ ...current, [selectedTenantId]: "" }));
+	function openRentalModal(rentalId) {
+		setRentalModalMode("edit");
+		setSelectedRentalId(rentalId);
+		setRentalDetail(null);
+		setRentalActionError("");
+		setRentalModalOpen(true);
+		void loadRentalDetail(rentalId);
+	}
+
+	function openTrailerModal(trailerId) {
+		setSelectedTrailerId(trailerId);
+		setTrailerDetail(null);
+		setTrailerActionError("");
+		setTrailerModalOpen(true);
+		void loadTrailerDetail(trailerId);
+	}
+
+	async function handleRentalSubmit(payload) {
+		setRentalActionLoading(true);
+		setRentalActionError("");
 
 		try {
-			const res = await fetch(
-				`/api/admin/applications/${encodeURIComponent(applicationId)}/decision`,
-				{
-					method: "POST",
-					headers: { "Content-Type": "application/json" },
-					body: JSON.stringify({
-						action,
-						reviewNotes: selectedNotes,
-					}),
-				},
-			);
+			const res =
+				rentalModalMode === "create"
+					? await fetch("/api/admin/rentals", {
+							method: "POST",
+							headers: { "Content-Type": "application/json" },
+							body: JSON.stringify({
+								...payload,
+								tenantId: selectedTenantId,
+							}),
+					  })
+					: await fetch(`/api/admin/rentals/${encodeURIComponent(selectedRentalId)}`, {
+							method: "PATCH",
+							headers: { "Content-Type": "application/json" },
+							body: JSON.stringify(payload),
+					  });
 			const json = await res.json().catch(() => ({}));
 
 			if (!res.ok) {
-				setActionErrorByTenantId((current) => ({
-					...current,
-					[selectedTenantId]:
-						typeof json?.error === "string"
-							? json.error
-							: "Failed to update workflow status.",
-				}));
-				setActionLoadingByTenantId((current) => ({ ...current, [selectedTenantId]: "" }));
+				setRentalActionError(
+					typeof json?.error === "string" ? json.error : "Failed to save rental."
+				);
+				setRentalActionLoading(false);
 				return;
 			}
 
-			setActionLoadingByTenantId((current) => ({ ...current, [selectedTenantId]: "" }));
+			setRentalActionLoading(false);
 			await refreshTenant(selectedTenantId);
+			if (rentalModalMode === "edit" && selectedRentalId) {
+				await loadRentalDetail(selectedRentalId);
+			} else {
+				closeRentalModal();
+			}
 		} catch {
-			setActionErrorByTenantId((current) => ({
-				...current,
-				[selectedTenantId]: "Failed to update workflow status.",
-			}));
-			setActionLoadingByTenantId((current) => ({ ...current, [selectedTenantId]: "" }));
+			setRentalActionError("Failed to save rental.");
+			setRentalActionLoading(false);
 		}
 	}
 
-	function updateCommunicationDraft(patch) {
-		if (!selectedTenantId || !selectedDetail) return;
-
-		setCommunicationDraftsByTenantId((current) => {
-			const existing = current[selectedTenantId] || buildCommunicationDraft(selectedDetail);
-			if (typeof patch.actionKey === "string" && patch.actionKey !== existing.actionKey) {
-				return {
-					...current,
-					[selectedTenantId]: {
-						...buildCommunicationDraft(selectedDetail, patch.actionKey),
-						...("sendEmail" in patch ? { sendEmail: patch.sendEmail } : {}),
-					},
-				};
-			}
-
-			return {
-				...current,
-				[selectedTenantId]: {
-					...existing,
-					...patch,
-				},
-			};
-		});
-	}
-
-	async function handleCommunicationSubmit() {
-		if (!selectedTenantId || !selectedDetail) return;
-		const draft = selectedDraft;
-		const currentApplicationId = selectedDetail.currentApplication?.id || null;
-
-		setCommunicationLoadingByTenantId((current) => ({ ...current, [selectedTenantId]: true }));
-		setCommunicationErrorByTenantId((current) => ({ ...current, [selectedTenantId]: "" }));
-		setCommunicationSuccessByTenantId((current) => ({ ...current, [selectedTenantId]: "" }));
+	async function handleRentalDelete() {
+		if (!selectedRentalId) return;
+		setRentalDeleteLoading(true);
+		setRentalActionError("");
 
 		try {
-			let res;
-			if (draft.actionKey === "general_update") {
-				res = await fetch(`/api/admin/tenants/${encodeURIComponent(selectedTenantId)}/communication`, {
-					method: "POST",
-					headers: { "Content-Type": "application/json" },
-					body: JSON.stringify({
-						subjectLine: draft.subjectLine,
-						message: draft.message,
-						applicationId: currentApplicationId,
-					}),
-				});
-			} else {
-				if (!currentApplicationId) {
-					setCommunicationErrorByTenantId((current) => ({
-						...current,
-						[selectedTenantId]: "A submitted application is required before timeline updates can be published.",
-					}));
-					setCommunicationLoadingByTenantId((current) => ({ ...current, [selectedTenantId]: false }));
-					return;
-				}
-
-				const itemKey = draft.actionKey.replace("timeline_", "");
-				const routeKey = {
-					sign_documents: JOURNEY_ITEM_KEYS.signDocuments,
-					review_contract: JOURNEY_ITEM_KEYS.reviewContract,
-					pick_up_trailer: JOURNEY_ITEM_KEYS.pickUpTrailer,
-				}[itemKey];
-
-				res = await fetch(`/api/admin/applications/${encodeURIComponent(currentApplicationId)}/timeline`, {
-					method: "POST",
-					headers: { "Content-Type": "application/json" },
-					body: JSON.stringify({
-						itemKey: routeKey,
-						stage: draft.stage,
-						description: draft.message,
-						sendUpdateEmail: draft.sendEmail,
-					}),
-				});
-			}
-
+			const res = await fetch(`/api/admin/rentals/${encodeURIComponent(selectedRentalId)}`, {
+				method: "DELETE",
+			});
 			const json = await res.json().catch(() => ({}));
 			if (!res.ok) {
-				setCommunicationErrorByTenantId((current) => ({
-					...current,
-					[selectedTenantId]:
-						typeof json?.error === "string"
-							? json.error
-							: "Failed to send update.",
-				}));
-				setCommunicationLoadingByTenantId((current) => ({ ...current, [selectedTenantId]: false }));
+				setRentalActionError(
+					typeof json?.error === "string" ? json.error : "Failed to delete rental."
+				);
+				setRentalDeleteLoading(false);
 				return;
 			}
 
-			setCommunicationSuccessByTenantId((current) => ({
-				...current,
-				[selectedTenantId]:
-					draft.actionKey === "general_update"
-						? "General account update sent."
-						: "Timeline update published.",
-			}));
-			setCommunicationLoadingByTenantId((current) => ({ ...current, [selectedTenantId]: false }));
+			setRentalDeleteLoading(false);
 			await refreshTenant(selectedTenantId);
+			closeRentalModal();
 		} catch {
-			setCommunicationErrorByTenantId((current) => ({
-				...current,
-				[selectedTenantId]: "Failed to send update.",
-			}));
-			setCommunicationLoadingByTenantId((current) => ({ ...current, [selectedTenantId]: false }));
+			setRentalActionError("Failed to delete rental.");
+			setRentalDeleteLoading(false);
+		}
+	}
+
+	async function handleRemoveRentalAssignment(assignmentId) {
+		if (!selectedRentalId) {
+			return { error: "Select a rental first." };
+		}
+
+		try {
+			const res = await fetch(
+				`/api/admin/rentals/${encodeURIComponent(selectedRentalId)}/assignments/${encodeURIComponent(assignmentId)}`,
+				{
+					method: "DELETE",
+				}
+			);
+			const json = await res.json().catch(() => ({}));
+			if (!res.ok) {
+				return {
+					error:
+						typeof json?.error === "string"
+							? json.error
+							: "Failed to remove the assignment.",
+				};
+			}
+
+			await refreshTenant(selectedTenantId);
+			await loadRentalDetail(selectedRentalId);
+			return { ok: true };
+		} catch {
+			return { error: "Failed to remove the assignment." };
+		}
+	}
+
+	async function handleUploadRentalDocument(formData) {
+		if (!selectedRentalId) {
+			return { error: "Select a rental first." };
+		}
+
+		try {
+			const res = await fetch(
+				`/api/admin/rentals/${encodeURIComponent(selectedRentalId)}/documents`,
+				{
+					method: "POST",
+					body: formData,
+				}
+			);
+			const json = await res.json().catch(() => ({}));
+			if (!res.ok) {
+				return {
+					error:
+						typeof json?.error === "string"
+							? json.error
+							: "Failed to upload document.",
+				};
+			}
+
+			await refreshTenant(selectedTenantId);
+			await loadRentalDetail(selectedRentalId);
+			return { ok: true };
+		} catch {
+			return { error: "Failed to upload document." };
+		}
+	}
+
+	async function handleTrailerSubmit(payload) {
+		if (!selectedTrailerId) return;
+		setTrailerActionLoading(true);
+		setTrailerActionError("");
+
+		try {
+			const res = await fetch(`/api/admin/trailers/${encodeURIComponent(selectedTrailerId)}`, {
+				method: "PATCH",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify(payload),
+			});
+			const json = await res.json().catch(() => ({}));
+			if (!res.ok) {
+				setTrailerActionError(
+					typeof json?.error === "string" ? json.error : "Failed to save trailer."
+				);
+				setTrailerActionLoading(false);
+				return;
+			}
+
+			setTrailerActionLoading(false);
+			await refreshTenant(selectedTenantId);
+			await loadTrailerDetail(selectedTrailerId);
+		} catch {
+			setTrailerActionError("Failed to save trailer.");
+			setTrailerActionLoading(false);
+		}
+	}
+
+	async function handleSendCommunication({
+		tenantId,
+		rentalId,
+		applicationId,
+		actionKey,
+		subjectLine,
+		message,
+		stage,
+		sendEmail,
+	}) {
+		try {
+			if (actionKey === "general_update") {
+				const res = await fetch(`/api/admin/tenants/${encodeURIComponent(tenantId)}/communication`, {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({
+						subjectLine,
+						message,
+						applicationId,
+						rentalId,
+					}),
+				});
+				const json = await res.json().catch(() => ({}));
+				if (!res.ok) {
+					return {
+						error:
+							typeof json?.error === "string" ? json.error : "Failed to send update.",
+					};
+				}
+			} else {
+				if (!rentalId) {
+					return {
+						error: "A rental is required before timeline steps can be published.",
+					};
+				}
+
+				const routeKey = {
+					timeline_sign_documents: JOURNEY_ITEM_KEYS.signDocuments,
+					timeline_review_contract: JOURNEY_ITEM_KEYS.reviewContract,
+					timeline_pick_up_trailer: JOURNEY_ITEM_KEYS.pickUpTrailer,
+				}[actionKey];
+
+				const res = await fetch(
+					`/api/admin/rentals/${encodeURIComponent(rentalId)}/timeline`,
+					{
+						method: "POST",
+						headers: { "Content-Type": "application/json" },
+						body: JSON.stringify({
+							itemKey: routeKey,
+							stage,
+							description: message,
+							sendUpdateEmail: sendEmail,
+						}),
+					}
+				);
+				const json = await res.json().catch(() => ({}));
+				if (!res.ok) {
+					return {
+						error:
+							typeof json?.error === "string" ? json.error : "Failed to publish update.",
+					};
+				}
+			}
+
+			await refreshTenant(selectedTenantId);
+			if (selectedRentalId) {
+				await loadRentalDetail(selectedRentalId);
+			}
+			return { ok: true };
+		} catch {
+			return { error: "Failed to send update." };
 		}
 	}
 
 	if (loading) {
 		return (
 			<div className="space-y-4">
-				<LoadingPanel
-					title="Loading Management"
-					subtitle="Fetching tenant account groups and workflow context."
-				/>
+				<LoadingPanel title="Loading Management" />
 				<LoadingCardGrid count={4} />
 			</div>
 		);
@@ -464,7 +594,7 @@ export default function TenantManagementWorkspace() {
 		return (
 			<StateCard
 				title="No Tenants Yet"
-				message="Tenant accounts created through interest and application intake will appear here."
+				message="No tenant accounts are available."
 			/>
 		);
 	}
@@ -481,9 +611,6 @@ export default function TenantManagementWorkspace() {
 							<h2 className="mt-2 font-syne text-3xl font-bold text-neutral-950 dark:text-neutral-50">
 								Tenant Accounts
 							</h2>
-							<p className="mt-2 max-w-4xl text-sm text-neutral-600 dark:text-neutral-400">
-								Browse accounts by grouped workflow state. Selecting a tenant opens the standard management modal for communications, status, billing, and documents.
-							</p>
 						</div>
 						<label className="relative block max-w-xl">
 							<MagnifyingGlassIcon className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-neutral-400" aria-hidden="true" />
@@ -587,19 +714,48 @@ export default function TenantManagementWorkspace() {
 					setActiveTab(tabId);
 					syncLocation(selectedTenantId, tabId);
 				}}
-				notes={selectedNotes}
-				onNotesChange={(value) =>
-					setNotesByTenantId((current) => ({ ...current, [selectedTenantId]: value }))
+				onCreateRental={openCreateRentalModal}
+				onOpenRental={openRentalModal}
+				onOpenTrailer={openTrailerModal}
+			/>
+
+			<RentalManagementModal
+				open={rentalModalOpen}
+				onClose={closeRentalModal}
+				mode={rentalModalMode}
+				detail={rentalDetail}
+				loading={rentalDetailLoading}
+				error={rentalDetailError}
+				onSubmit={handleRentalSubmit}
+				onDelete={handleRentalDelete}
+				submitting={rentalActionLoading}
+				deleting={rentalDeleteLoading}
+				submitError={rentalActionError}
+				onSendCommunication={handleSendCommunication}
+				onRemoveAssignment={handleRemoveRentalAssignment}
+				onUploadDocument={handleUploadRentalDocument}
+				tenantOptions={
+					selectedDetail
+						? tenants.filter((tenant) => tenant.id === selectedDetail.tenant.id)
+						: tenants
 				}
-				onSubmitAction={handleSubmitStatusAction}
-				actionLoading={actionLoadingByTenantId[selectedTenantId] || ""}
-				actionError={actionErrorByTenantId[selectedTenantId] || ""}
-				communicationDraft={selectedDraft}
-				onCommunicationDraftChange={updateCommunicationDraft}
-				onCommunicationSubmit={handleCommunicationSubmit}
-				communicationSubmitting={Boolean(communicationLoadingByTenantId[selectedTenantId])}
-				communicationError={communicationErrorByTenantId[selectedTenantId] || ""}
-				communicationSuccess={communicationSuccessByTenantId[selectedTenantId] || ""}
+				initialTenantId={selectedDetail?.tenant?.id || ""}
+				availableTrailerOptions={availableTrailerOptions}
+				maxWidthClass="max-w-7xl"
+			/>
+
+			<TrailerManagementModal
+				open={trailerModalOpen}
+				onClose={closeTrailerModal}
+				mode="edit"
+				detail={trailerDetail}
+				loading={trailerDetailLoading}
+				error={trailerDetailError}
+				onSubmit={handleTrailerSubmit}
+				submitting={trailerActionLoading}
+				submitError={trailerActionError}
+				assignableRentals={[]}
+				maxWidthClass="max-w-7xl"
 			/>
 		</>
 	);

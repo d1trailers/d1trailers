@@ -19,19 +19,15 @@ import {
 } from "@/lib/server/services/access";
 
 const ADMIN_MANAGEMENT_GROUPS = {
-	leads: new Set(["lead"]),
-	applicants: new Set(["applied", "under_review", "feedback_requested"]),
-	activation: new Set(["approved", "awaiting_first_payment"]),
-	live: new Set(["active", "past_due", "suspended"]),
-	closed: new Set(["closed"]),
+	active: new Set(["active"]),
+	suspended: new Set(["suspended"]),
+	stale: new Set(["stale"]),
 } as const;
 
 function getManagementGroup(status: string) {
-	if (ADMIN_MANAGEMENT_GROUPS.leads.has(status as never)) return "leads";
-	if (ADMIN_MANAGEMENT_GROUPS.applicants.has(status as never)) return "applicants";
-	if (ADMIN_MANAGEMENT_GROUPS.activation.has(status as never)) return "activation";
-	if (ADMIN_MANAGEMENT_GROUPS.live.has(status as never)) return "live";
-	if (ADMIN_MANAGEMENT_GROUPS.closed.has(status as never)) return "closed";
+	if (ADMIN_MANAGEMENT_GROUPS.active.has(status as never)) return "active";
+	if (ADMIN_MANAGEMENT_GROUPS.suspended.has(status as never)) return "suspended";
+	if (ADMIN_MANAGEMENT_GROUPS.stale.has(status as never)) return "stale";
 	return "other";
 }
 
@@ -116,7 +112,8 @@ export async function getAdminManagementTenants() {
 					item.visible_to_tenant &&
 					item.stage !== "completed" &&
 					item.type === "action_required",
-			).length,
+			).length +
+				tenantRentals.filter((rental) => rental.status === "customer_review").length,
 		};
 	});
 }
@@ -198,5 +195,38 @@ export async function getPortalSnapshot(context: UserContext) {
 		rentals,
 		timelineItems,
 		applications,
+	};
+}
+
+export async function getTenantAccountWorkspace(context: UserContext) {
+	const membership = context.activeTenantMembership;
+	const tenant = membership?.tenant;
+	if (!tenant) {
+		return {
+			tenant: null,
+			rentals: [],
+			timelineItems: [],
+			communications: [],
+		};
+	}
+
+	const [rentals, timelineItems, communications] = await Promise.all([
+		hasTenantPermission(membership, "view_rentals") ||
+		hasTenantPermission(membership, "manage_rentals")
+			? listRentalsByTenantId(tenant.id)
+			: Promise.resolve([]),
+		hasTenantPermission(membership, "view_timeline")
+			? listTimelineItemsByTenantId(tenant.id)
+			: Promise.resolve([]),
+		hasTenantPermission(membership, "view_timeline")
+			? listCommunicationEventsByTenantId(tenant.id)
+			: Promise.resolve([]),
+	]);
+
+	return {
+		tenant,
+		rentals,
+		timelineItems,
+		communications,
 	};
 }

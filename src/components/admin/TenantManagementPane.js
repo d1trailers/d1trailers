@@ -1,53 +1,21 @@
 "use client";
 
-import Link from "next/link";
+import { useMemo } from "react";
 import {
-	BanknotesIcon,
-	ChatBubbleLeftRightIcon,
-	ClipboardDocumentListIcon,
 	ClockIcon,
-	DocumentTextIcon,
 	EnvelopeIcon,
 	FolderOpenIcon,
-	SparklesIcon,
+	PlusIcon,
+	RectangleStackIcon,
 } from "@heroicons/react/24/outline";
 import Card from "@/components/ui/Card";
 import StatusBadge from "@/components/admin/StatusBadge";
-import {
-	JOURNEY_ITEM_KEYS,
-	TIMELINE_STAGE_VALUES,
-} from "@/lib/contracts/journey";
+import ActionButton from "@/components/ui/ActionButton";
 
 const TAB_ITEMS = [
-	{ id: "communications", label: "Communications", icon: ChatBubbleLeftRightIcon },
-	{ id: "status", label: "Status", icon: SparklesIcon },
-	{ id: "billing", label: "Billing", icon: BanknotesIcon },
-	{ id: "documents", label: "Documents", icon: FolderOpenIcon },
+	{ id: "rentals", label: "Rentals", icon: RectangleStackIcon },
+	{ id: "trailers", label: "Trailers", icon: FolderOpenIcon },
 ];
-
-const TIMELINE_ACTIONS = {
-	timeline_sign_documents: {
-		itemKey: JOURNEY_ITEM_KEYS.signDocuments,
-		label: "Publish: Sign Documents",
-		subjectLine: "Sign your rental documents",
-		description:
-			"Review and sign the required rental documents so your trailer can be released.",
-	},
-	timeline_review_contract: {
-		itemKey: JOURNEY_ITEM_KEYS.reviewContract,
-		label: "Publish: Review Contract",
-		subjectLine: "Review your contract details",
-		description:
-			"Review your rental contract details once the document packet is ready.",
-	},
-	timeline_pick_up_trailer: {
-		itemKey: JOURNEY_ITEM_KEYS.pickUpTrailer,
-		label: "Publish: Pick Up Trailer",
-		subjectLine: "Coordinate trailer pickup",
-		description:
-			"Coordinate pickup details once your documents and contract steps are complete.",
-	},
-};
 
 function formatDate(value) {
 	if (!value) return "-";
@@ -56,35 +24,57 @@ function formatDate(value) {
 	return date.toLocaleString();
 }
 
+function formatDateOnly(value) {
+	if (!value) return "-";
+	const date = new Date(value);
+	if (Number.isNaN(date.getTime())) return "-";
+	return date.toLocaleDateString();
+}
+
 function formatLabel(value) {
 	if (!value) return "Unknown";
-	return value
+	return String(value)
 		.split("_")
 		.map((part) => part.charAt(0).toUpperCase() + part.slice(1))
 		.join(" ");
 }
 
-function ActionButton({
-	children,
-	tone = "primary",
-	className = "",
-	...props
-}) {
-	const tones = {
-		primary: "bg-(--branding-700) text-neutral-50 hover:bg-(--branding-800)",
-		positive: "bg-emerald-600 text-white hover:bg-emerald-700",
-		neutral:
-			"border border-(--border-soft) text-neutral-800 hover:bg-neutral-100 dark:text-neutral-100 dark:hover:bg-neutral-900",
-		danger: "bg-red-600 text-white hover:bg-red-700",
-	};
+function dedupeById(items) {
+	const seen = new Set();
+	return items.filter((item) => {
+		if (!item?.id || seen.has(item.id)) return false;
+		seen.add(item.id);
+		return true;
+	});
+}
 
+function getRentalDocumentCount(rental, application) {
+	const applicationDocuments = Array.isArray(application?.documents)
+		? application.documents
+		: [];
+	const rentalDocuments = Array.isArray(rental?.documents) ? rental.documents : [];
+	return dedupeById([...applicationDocuments, ...rentalDocuments]).length;
+}
+
+function getRentalTitle(rental) {
+	if (!rental) return "Rental";
+	if (rental.status === "customer_review") return "Rental Proposal";
+	if (rental.status === "changes_pending") return "Changes Pending";
+	if (rental.request_kind === "rental_expansion") {
+		return "Trailer Request";
+	}
+	if (rental.record_kind === "request") {
+		return "Rental Draft";
+	}
+	return "Rental Agreement";
+}
+
+function EmptySection({ title, message }) {
 	return (
-		<button
-			{...props}
-			className={`inline-flex items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${tones[tone]} ${className}`}
-		>
-			{children}
-		</button>
+		<div className="rounded-2xl border border-dashed border-(--border-soft) bg-white/70 p-5 text-sm text-neutral-600 dark:bg-neutral-950/30 dark:text-neutral-400">
+			<p className="font-semibold text-neutral-900 dark:text-neutral-100">{title}</p>
+			<p className="mt-2">{message}</p>
+		</div>
 	);
 }
 
@@ -104,461 +94,70 @@ function MetricTile({ label, value, hint }) {
 	);
 }
 
-function EmptyTabState({ title, message }) {
-	return (
-		<div className="rounded-2xl border border-dashed border-(--border-soft) bg-white/70 p-6 text-sm text-neutral-600 dark:bg-neutral-950/30 dark:text-neutral-400">
-			<p className="font-semibold text-neutral-900 dark:text-neutral-100">{title}</p>
-			<p className="mt-2">{message}</p>
-		</div>
+function buildRentalViews(detail) {
+	const applicationsById = new Map(
+		(detail.applications || []).map((application) => [application.id, application])
 	);
-}
+	const tenantTimelineItems = Array.isArray(detail.timelineItems) ? detail.timelineItems : [];
+	const tenantCommunications = Array.isArray(detail.communications) ? detail.communications : [];
 
-function TimelineHistory({ items }) {
-	if (!items.length) {
-		return (
-			<EmptyTabState
-				title="No Timeline Published"
-				message="Applicant-facing timeline items will appear here after communication or workflow updates are published."
-			/>
+	return (detail.rentals || []).map((rental) => {
+		const application = rental.application || applicationsById.get(rental.application_id) || null;
+		const applicationTimelineItems = Array.isArray(application?.timeline_items)
+			? application.timeline_items
+			: [];
+		const timelineItems = dedupeById([
+			...applicationTimelineItems,
+			...tenantTimelineItems.filter((item) => {
+				if (item.rental_id) {
+					return item.rental_id === rental.id;
+				}
+				return Boolean(rental.application_id && item.application_id === rental.application_id);
+			}),
+		]);
+		const communications = tenantCommunications.filter((communication) => {
+			if (communication?.rental_id) {
+				return communication.rental_id === rental.id;
+			}
+			if (communication?.payload_snapshot?.rentalId) {
+				return communication.payload_snapshot.rentalId === rental.id;
+			}
+			return Boolean(rental.application_id && communication.application_id === rental.application_id);
+		});
+		const trailers = dedupeById(
+			(rental.assignments || []).map((assignment) => assignment.trailer).filter(Boolean)
 		);
-	}
 
-	return (
-		<div className="space-y-3">
-			{items.map((item) => (
-				<div key={item.id} className="surface-subtle rounded-2xl p-4 space-y-2">
-					<div className="flex flex-wrap items-center justify-between gap-3">
-						<div>
-							<p className="font-semibold text-neutral-950 dark:text-neutral-50">
-								{item.title}
-							</p>
-							<p className="text-xs text-neutral-500 dark:text-neutral-400">
-								{formatLabel(item.stage)} | {formatLabel(item.type)}
-							</p>
-						</div>
-						<div className="flex flex-wrap gap-2">
-							<StatusBadge status={item.stage} />
-							<StatusBadge status={item.type} />
-						</div>
-					</div>
-					{item.description ? (
-						<p className="text-sm text-neutral-600 dark:text-neutral-400">{item.description}</p>
-					) : null}
-					<div className="flex flex-wrap gap-4 text-xs text-neutral-500 dark:text-neutral-400">
-						<span>Created {formatDate(item.created_at)}</span>
-						{item.completed_at ? <span>Completed {formatDate(item.completed_at)}</span> : null}
-						{item.due_at ? <span>Due {formatDate(item.due_at)}</span> : null}
-					</div>
-				</div>
-			))}
-		</div>
-	);
-}
-
-function CommunicationsTab({
-	detail,
-	draft,
-	onDraftChange,
-	onSubmit,
-	submitting,
-	error,
-	success,
-}) {
-	const currentApplication = detail.currentApplication;
-	const timelineAction = draft.actionKey.startsWith("timeline_")
-		? TIMELINE_ACTIONS[draft.actionKey]
-		: null;
-	const communicationOptions = [
-		{ value: "general_update", label: "General Account Update" },
-		...Object.entries(TIMELINE_ACTIONS).map(([value, config]) => ({
-			value,
-			label: config.label,
-		})),
-	];
-
-	return (
-		<div className="space-y-4">
-			<Card>
-				<div className="space-y-4">
-					<div className="flex flex-wrap items-start justify-between gap-4">
-						<div>
-							<h3 className="font-syne text-2xl font-bold text-neutral-950 dark:text-neutral-50">
-								Send Update
-							</h3>
-							<p className="mt-2 text-sm text-neutral-600 dark:text-neutral-400">
-								Choose a communication type, refine the message, and send it from one place.
-							</p>
-						</div>
-						<div className="rounded-2xl border border-(--border-soft) bg-white/80 px-4 py-3 text-sm text-neutral-600 dark:bg-neutral-950/40 dark:text-neutral-300">
-							<p className="font-semibold text-neutral-900 dark:text-neutral-100">
-								Recipient
-							</p>
-							<p>{detail.tenant.primary_email}</p>
-						</div>
-					</div>
-
-					<div className="grid grid-cols-1 gap-4 xl:grid-cols-[0.9fr_1.1fr]">
-						<div className="space-y-3">
-							<label className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
-								Update Type
-							</label>
-							<select
-								value={draft.actionKey}
-								onChange={(event) =>
-									onDraftChange({ actionKey: event.target.value })
-								}
-								className="w-full rounded-xl border border-(--border-soft) bg-white px-4 py-3 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-(--branding-700) dark:bg-neutral-950/50 dark:text-neutral-100"
-							>
-								{communicationOptions.map((option) => (
-									<option key={option.value} value={option.value}>
-										{option.label}
-									</option>
-								))}
-							</select>
-
-							<label className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
-								Subject
-							</label>
-							<input
-								type="text"
-								value={draft.subjectLine}
-								onChange={(event) => onDraftChange({ subjectLine: event.target.value })}
-								className="w-full rounded-xl border border-(--border-soft) bg-white px-4 py-3 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-(--branding-700) dark:bg-neutral-950/50 dark:text-neutral-100"
-								placeholder="Short update subject"
-							/>
-
-							{timelineAction ? (
-								<>
-									<label className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
-										Timeline Stage
-									</label>
-									<select
-										value={draft.stage}
-										onChange={(event) => onDraftChange({ stage: event.target.value })}
-										className="w-full rounded-xl border border-(--border-soft) bg-white px-4 py-3 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-(--branding-700) dark:bg-neutral-950/50 dark:text-neutral-100"
-									>
-										{TIMELINE_STAGE_VALUES.map((stage) => (
-											<option key={stage} value={stage}>
-												{formatLabel(stage)}
-											</option>
-										))}
-									</select>
-
-									<label className="flex items-center gap-3 rounded-xl border border-(--border-soft) px-4 py-3 text-sm text-neutral-700 dark:text-neutral-300">
-										<input
-											type="checkbox"
-											checked={Boolean(draft.sendEmail)}
-											onChange={(event) => onDraftChange({ sendEmail: event.target.checked })}
-											className="h-4 w-4 rounded border-(--border-soft)"
-										/>
-										Email applicant when this timeline step is published
-									</label>
-								</>
-							) : null}
-						</div>
-
-						<div className="space-y-3">
-							<label className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
-								Message
-							</label>
-							<textarea
-								value={draft.message}
-								onChange={(event) => onDraftChange({ message: event.target.value })}
-								rows={9}
-								className="w-full rounded-2xl border border-(--border-soft) bg-white px-4 py-3 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-(--branding-700) dark:bg-neutral-950/50 dark:text-neutral-100"
-								placeholder="Share the update that should go to the tenant."
-							/>
-							<div className="flex flex-wrap items-center justify-between gap-3">
-								<p className="text-xs text-neutral-500 dark:text-neutral-400">
-									{timelineAction
-										? "This will publish the selected timeline step and optionally email the applicant."
-										: "This will send a direct account update without changing tenant workflow state."}
-								</p>
-								<ActionButton
-									type="button"
-									tone="primary"
-									onClick={onSubmit}
-									disabled={submitting || (timelineAction && !currentApplication)}
-								>
-									{submitting ? "Sending Update..." : "Send Update"}
-								</ActionButton>
-							</div>
-							{timelineAction && !currentApplication ? (
-								<p className="text-sm font-medium text-amber-600">
-									A submitted application is required before timeline steps can be published.
-								</p>
-							) : null}
-							{success ? <p className="text-sm font-medium text-emerald-600">{success}</p> : null}
-							{error ? <p className="text-sm font-medium text-red-600">{error}</p> : null}
-						</div>
-					</div>
-				</div>
-			</Card>
-
-			<Card>
-				<div className="space-y-3">
-					<div className="flex flex-wrap items-center justify-between gap-3">
-						<h3 className="font-syne text-2xl font-bold text-neutral-950 dark:text-neutral-50">
-							Recent Communications
-						</h3>
-						<p className="text-sm text-neutral-600 dark:text-neutral-400">
-							{detail.communications.length} event(s)
-						</p>
-					</div>
-					{detail.communications.length ? (
-						<div className="space-y-3">
-							{detail.communications.map((communication) => (
-								<div key={communication.id} className="surface-subtle rounded-2xl p-4 space-y-2">
-									<div className="flex flex-wrap items-start justify-between gap-3">
-										<div>
-											<p className="font-semibold text-neutral-950 dark:text-neutral-50">
-												{communication.subject || formatLabel(communication.type)}
-											</p>
-											<p className="text-sm text-neutral-600 dark:text-neutral-400">
-												{communication.recipient_email}
-											</p>
-										</div>
-										<div className="flex flex-wrap gap-2">
-											<StatusBadge status={communication.type} />
-											<StatusBadge status={communication.status} />
-										</div>
-									</div>
-									<div className="flex flex-wrap gap-4 text-xs text-neutral-500 dark:text-neutral-400">
-										<span>Created {formatDate(communication.created_at)}</span>
-										{communication.sent_at ? <span>Sent {formatDate(communication.sent_at)}</span> : null}
-									</div>
-								</div>
-							))}
-						</div>
-					) : (
-						<EmptyTabState
-							title="No Communication History"
-							message="Messages, timeline update emails, and workflow notifications will appear here."
-						/>
-					)}
-				</div>
-			</Card>
-		</div>
-	);
-}
-
-function StatusTab({
-	detail,
-	notes,
-	onNotesChange,
-	onSubmitAction,
-	actionLoading,
-	actionError,
-}) {
-	const currentApplication = detail.currentApplication;
-	const timelineItems = currentApplication?.timeline_items || [];
-
-	return (
-		<div className="space-y-4">
-			<div className="grid grid-cols-1 gap-4 xl:grid-cols-4">
-				<MetricTile label="Tenant Status" value={formatLabel(detail.tenant.status)} hint="Account-level lifecycle state." />
-				<MetricTile
-					label="Application Status"
-					value={currentApplication ? formatLabel(currentApplication.status) : "None"}
-					hint="Latest submitted application record."
-				/>
-				<MetricTile label="Applications" value={detail.applications.length} hint="Total application records on this account." />
-				<MetricTile label="Rentals" value={detail.rentals.length} hint="Current rental records tied to this tenant." />
-			</div>
-
-			<Card>
-				<div className="space-y-4">
-					<div>
-						<h3 className="font-syne text-2xl font-bold text-neutral-950 dark:text-neutral-50">
-							Workflow Controls
-						</h3>
-						<p className="mt-2 text-sm text-neutral-600 dark:text-neutral-400">
-							Use the account workflow controls here, while keeping communication-specific updates in the Communications tab.
-						</p>
-					</div>
-
-					{currentApplication ? (
-						<>
-							<textarea
-								value={notes}
-								onChange={(event) => onNotesChange(event.target.value)}
-								rows={6}
-								className="w-full rounded-2xl border border-(--border-soft) bg-white px-4 py-3 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-(--branding-700) dark:bg-neutral-950/50 dark:text-neutral-100"
-								placeholder="Keep review notes, follow-up context, or approval rationale here."
-							/>
-							<div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-								<ActionButton type="button" tone="primary" disabled={Boolean(actionLoading)} onClick={() => onSubmitAction("review")}>
-									Mark In Review
-								</ActionButton>
-								<ActionButton type="button" tone="neutral" disabled={Boolean(actionLoading)} onClick={() => onSubmitAction("request_info")}>
-									Request Feedback
-								</ActionButton>
-								<ActionButton type="button" tone="positive" disabled={Boolean(actionLoading)} onClick={() => onSubmitAction("approve")}>
-									Approve Application
-								</ActionButton>
-								<ActionButton type="button" tone="danger" disabled={Boolean(actionLoading)} onClick={() => onSubmitAction("deny")}>
-									Close Application
-								</ActionButton>
-							</div>
-							{actionLoading ? (
-								<p className="text-sm text-neutral-600 dark:text-neutral-400">Saving workflow update...</p>
-							) : null}
-							{actionError ? <p className="text-sm font-medium text-red-600">{actionError}</p> : null}
-						</>
-					) : (
-						<EmptyTabState
-							title="No Submitted Application"
-							message="This tenant has not submitted a full application yet, so review workflow actions are not available."
-						/>
-					)}
-				</div>
-			</Card>
-
-			<Card>
-				<div className="space-y-3">
-					<div className="flex flex-wrap items-center justify-between gap-3">
-						<h3 className="font-syne text-2xl font-bold text-neutral-950 dark:text-neutral-50">
-							Applicant Timeline
-						</h3>
-						<p className="text-sm text-neutral-600 dark:text-neutral-400">{timelineItems.length} item(s)</p>
-					</div>
-					<TimelineHistory items={timelineItems} />
-				</div>
-			</Card>
-		</div>
-	);
-}
-
-function BillingTab({ detail }) {
-	const currentApplication = detail.currentApplication;
-	const approvedState = ["approved", "awaiting_first_payment", "active", "past_due", "suspended"].includes(detail.tenant.status);
-
-	return (
-		<div className="space-y-4">
-			<div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-				<MetricTile label="Account Status" value={formatLabel(detail.tenant.status)} hint="Top-level tenant billing visibility." />
-				<MetricTile label="Billing Frequency" value={currentApplication?.billing_frequency ? formatLabel(currentApplication.billing_frequency) : "Monthly"} hint="Current application billing preference." />
-				<MetricTile label="Rental Count" value={detail.rentals.length} hint="Rental-linked billing records will surface here as operations come online." />
-			</div>
-
-			<Card>
-				<div className="space-y-3">
-					<h3 className="font-syne text-2xl font-bold text-neutral-950 dark:text-neutral-50">
-						Billing Snapshot
-					</h3>
-					{approvedState ? (
-						<p className="text-sm text-neutral-600 dark:text-neutral-400">
-							This account is in or near operational billing stages. Stripe-backed billing controls will continue to expand here, but this pane already keeps billing-specific information separate from workflow status.
-						</p>
-					) : (
-						<p className="text-sm text-neutral-600 dark:text-neutral-400">
-							Billing is not active for this tenant yet. Once the account reaches approval and activation stages, billing actions and account health will surface here.
-						</p>
-					)}
-				</div>
-			</Card>
-
-			{detail.rentals.length ? (
-				<Card>
-					<div className="space-y-3">
-						<h3 className="font-syne text-2xl font-bold text-neutral-950 dark:text-neutral-50">
-							Rental References
-						</h3>
-						<div className="space-y-3">
-							{detail.rentals.map((rental) => (
-								<div key={rental.id} className="surface-subtle rounded-2xl p-4">
-									<div className="flex flex-wrap items-center justify-between gap-3">
-										<div>
-											<p className="font-semibold text-neutral-950 dark:text-neutral-50">
-												{rental.rental_number || rental.id}
-											</p>
-											<p className="text-sm text-neutral-600 dark:text-neutral-400">
-												Created {formatDate(rental.created_at)}
-											</p>
-										</div>
-										<StatusBadge status={rental.status || "pending"} />
-									</div>
-								</div>
-							))}
-						</div>
-					</div>
-				</Card>
-			) : null}
-		</div>
-	);
-}
-
-function DocumentsTab({ detail }) {
-	const documentGroups = detail.applications
-		.map((application) => ({
+		return {
+			rental,
 			application,
-			documents: application.documents || [],
-		}))
-		.filter((group) => group.documents.length);
+			trailers,
+			timelineCount: timelineItems.length,
+			communicationCount: communications.length,
+			documentCount: getRentalDocumentCount(rental, application),
+		};
+	});
+}
 
-	return (
-		<div className="space-y-4">
-			<Card>
-				<div className="space-y-3">
-					<div className="flex flex-wrap items-center justify-between gap-3">
-						<h3 className="font-syne text-2xl font-bold text-neutral-950 dark:text-neutral-50">
-							Application Documents
-						</h3>
-						<p className="text-sm text-neutral-600 dark:text-neutral-400">
-							{documentGroups.reduce((count, group) => count + group.documents.length, 0)} document(s)
-						</p>
-					</div>
-					{documentGroups.length ? (
-						<div className="space-y-4">
-							{documentGroups.map((group) => (
-								<div key={group.application.id} className="space-y-3">
-									<div className="flex flex-wrap items-center justify-between gap-3">
-										<div>
-											<p className="font-semibold text-neutral-950 dark:text-neutral-50">
-												{group.application.company_name}
-											</p>
-											<p className="text-sm text-neutral-600 dark:text-neutral-400">
-												Submitted {formatDate(group.application.submitted_at)}
-											</p>
-										</div>
-										<StatusBadge status={group.application.status} />
-									</div>
-									<div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-										{group.documents.map((document) => (
-											<Link
-												key={document.id}
-												href={document.signed_url || "#"}
-												target="_blank"
-												rel="noreferrer"
-												className="surface-subtle rounded-2xl border border-(--border-soft) p-4 transition hover:border-(--branding-700)"
-											>
-												<div className="flex items-start gap-3">
-													<DocumentTextIcon className="mt-0.5 h-5 w-5 text-(--branding-700)" aria-hidden="true" />
-													<div>
-														<p className="font-semibold text-neutral-950 dark:text-neutral-50">
-															{document.file_name}
-														</p>
-														<p className="text-sm text-neutral-600 dark:text-neutral-400">
-															{document.document_type}
-														</p>
-													</div>
-												</div>
-											</Link>
-										))}
-									</div>
-								</div>
-							))}
-						</div>
-					) : (
-						<EmptyTabState
-							title="No Documents Uploaded"
-							message="Uploaded application documents will appear here once the tenant submits them."
-						/>
-					)}
-				</div>
-			</Card>
-		</div>
-	);
+function buildTrailerViews(rentalViews) {
+	const trailerMap = new Map();
+	for (const rentalView of rentalViews) {
+		for (const assignment of rentalView.rental.assignments || []) {
+			if (!assignment.trailer) continue;
+			const current = trailerMap.get(assignment.trailer.id) || {
+				...assignment.trailer,
+				linkedRentals: [],
+			};
+			current.linkedRentals.push({
+				id: rentalView.rental.id,
+				status: rentalView.rental.status,
+				recordKind: rentalView.rental.record_kind,
+				assignmentStatus: assignment.status,
+			});
+			trailerMap.set(assignment.trailer.id, current);
+		}
+	}
+	return [...trailerMap.values()];
 }
 
 export default function TenantManagementPane({
@@ -567,50 +166,53 @@ export default function TenantManagementPane({
 	error,
 	activeTab,
 	onTabChange,
-	notes,
-	onNotesChange,
-	onSubmitAction,
-	actionLoading,
-	actionError,
-	communicationDraft,
-	onCommunicationDraftChange,
-	onCommunicationSubmit,
-	communicationSubmitting,
-	communicationError,
-	communicationSuccess,
+	onCreateRental,
+	onOpenRental,
+	onOpenTrailer,
 }) {
+	const rentalViews = useMemo(() => (detail ? buildRentalViews(detail) : []), [detail]);
+	const trailerViews = useMemo(() => buildTrailerViews(rentalViews), [rentalViews]);
+
 	if (loading) {
 		return (
 			<Card>
-				<div className="space-y-3 text-sm text-neutral-600 dark:text-neutral-400">
-					<p className="font-semibold text-neutral-900 dark:text-neutral-100">
-						Loading tenant management pane...
-					</p>
-					<p>Fetching tenant details, applications, timeline, and communications.</p>
-				</div>
+				<p className="text-sm text-neutral-600 dark:text-neutral-400">Loading...</p>
 			</Card>
 		);
 	}
 
 	if (error) {
-		return <EmptyTabState title="Tenant Unavailable" message={error} />;
+		return <EmptySection title="Tenant Unavailable" message={error} />;
 	}
 
 	if (!detail) {
-		return (
-			<EmptyTabState
-				title="Select a Tenant"
-				message="Choose a tenant from the management list to open the shared workflow pane."
-			/>
-		);
+		return <EmptySection title="Select a Tenant" message="Select a tenant to continue." />;
 	}
 
-	const currentApplication = detail.currentApplication;
 	const metrics = [
-		{ label: "Tenant Status", value: formatLabel(detail.tenant.status), hint: "Top-level account lifecycle state." },
-		{ label: "Application", value: currentApplication ? formatLabel(currentApplication.status) : "None", hint: currentApplication ? `Submitted ${formatDate(currentApplication.submitted_at)}` : "No submitted application yet." },
-		{ label: "Communications", value: detail.communications.length, hint: "Recorded outbound events." },
-		{ label: "Pending Actions", value: detail.timelineItems.filter((item) => item.visible_to_tenant && item.stage !== "completed" && item.type === "action_required").length, hint: "Open tenant-facing action items." },
+		{
+			label: "Rentals",
+			value: rentalViews.length,
+			hint: "Requests and agreements on this account.",
+		},
+		{
+			label: "Open Requests",
+			value: rentalViews.filter(
+				(rentalView) =>
+					rentalView.rental.record_kind === "request" && !rentalView.rental.resolved_at
+			).length,
+			hint: "Unresolved rental requests.",
+		},
+		{
+			label: "Assigned Trailers",
+			value: trailerViews.length,
+			hint: "Physical trailers linked through assignments.",
+		},
+		{
+			label: "Communications",
+			value: detail.communications.length,
+			hint: "Recorded communication events across this account.",
+		},
 	];
 
 	return (
@@ -625,15 +227,18 @@ export default function TenantManagementPane({
 							{detail.tenant.display_name}
 						</h2>
 						<div className="flex flex-wrap gap-2 text-sm text-neutral-600 dark:text-neutral-400">
-							<span className="inline-flex items-center gap-2"><EnvelopeIcon className="h-4 w-4" aria-hidden="true" /> {detail.tenant.primary_email}</span>
+							<span className="inline-flex items-center gap-2">
+								<EnvelopeIcon className="h-4 w-4" aria-hidden="true" />
+								{detail.tenant.primary_email}
+							</span>
 							{detail.tenant.primary_phone ? <span>{detail.tenant.primary_phone}</span> : null}
-							<span className="inline-flex items-center gap-2"><ClockIcon className="h-4 w-4" aria-hidden="true" /> Updated {formatDate(detail.tenant.updated_at)}</span>
+							<span className="inline-flex items-center gap-2">
+								<ClockIcon className="h-4 w-4" aria-hidden="true" />
+								Updated {formatDate(detail.tenant.updated_at)}
+							</span>
 						</div>
 					</div>
-					<div className="flex flex-wrap gap-2">
-						<StatusBadge status={detail.tenant.status} />
-						{currentApplication ? <StatusBadge status={currentApplication.status} /> : null}
-					</div>
+					<StatusBadge status={detail.tenant.status} />
 				</div>
 
 				<div className="grid grid-cols-1 gap-4 xl:grid-cols-4">
@@ -661,29 +266,132 @@ export default function TenantManagementPane({
 				})}
 			</div>
 
-			{activeTab === "communications" ? (
-				<CommunicationsTab
-					detail={detail}
-					draft={communicationDraft}
-					onDraftChange={onCommunicationDraftChange}
-					onSubmit={onCommunicationSubmit}
-					submitting={communicationSubmitting}
-					error={communicationError}
-					success={communicationSuccess}
-				/>
+			{activeTab === "rentals" ? (
+				<div className="space-y-4">
+					<Card>
+						<div className="flex flex-wrap items-start justify-between gap-4">
+							<div>
+								<h3 className="font-syne text-2xl font-bold text-neutral-950 dark:text-neutral-50">
+									Rentals on This Account
+								</h3>
+								<p className="mt-2 text-sm text-neutral-600 dark:text-neutral-400">
+									Rental workflow lives inside each rental. Open any rental below to manage terms, assignments, communications, and timeline updates in the shared rental modal.
+								</p>
+							</div>
+							<ActionButton type="button" tone="primary" onClick={onCreateRental}>
+								<PlusIcon className="h-5 w-5" aria-hidden="true" />
+								Add Rental
+							</ActionButton>
+						</div>
+					</Card>
+
+					{rentalViews.length ? (
+						<div className="space-y-3">
+							{rentalViews.map((rentalView) => (
+								<button
+									key={rentalView.rental.id}
+									type="button"
+									onClick={() => onOpenRental(rentalView.rental.id)}
+									className="w-full rounded-2xl border border-(--border-soft) bg-white/80 p-5 text-left transition hover:border-(--branding-700) hover:bg-red-50/30 dark:bg-neutral-950/40 dark:hover:bg-red-950/10"
+								>
+									<div className="space-y-4">
+										<div className="flex flex-wrap items-start justify-between gap-4">
+											<div className="space-y-2">
+												<p className="font-syne text-2xl font-bold text-neutral-950 dark:text-neutral-50">
+													{getRentalTitle(rentalView.rental)}
+												</p>
+												<p className="text-sm text-neutral-600 dark:text-neutral-400">
+													{rentalView.application?.company_name || detail.tenant.display_name} | {rentalView.rental.requested_trailer_type || "Trailer type pending"}
+												</p>
+												<div className="flex flex-wrap gap-4 text-xs text-neutral-500 dark:text-neutral-400">
+													<span>Start {formatDateOnly(rentalView.rental.contract_start_date)}</span>
+													<span>End {formatDateOnly(rentalView.rental.end_date)}</span>
+													<span>{(rentalView.rental.assignments || []).length} assignment(s)</span>
+												</div>
+											</div>
+											<div className="flex flex-wrap justify-end gap-2">
+												<StatusBadge status={rentalView.rental.record_kind} />
+												<StatusBadge status={rentalView.rental.status} />
+												<StatusBadge status={rentalView.rental.billing_status} />
+											</div>
+										</div>
+
+										<div className="grid gap-3 md:grid-cols-4">
+											<div className="surface-subtle rounded-2xl px-4 py-3">
+												<p className="text-xs uppercase tracking-[0.12em] text-neutral-500 dark:text-neutral-400">Trailers</p>
+												<p className="mt-2 font-semibold text-neutral-950 dark:text-neutral-50">{rentalView.trailers.length}</p>
+											</div>
+											<div className="surface-subtle rounded-2xl px-4 py-3">
+												<p className="text-xs uppercase tracking-[0.12em] text-neutral-500 dark:text-neutral-400">Documents</p>
+												<p className="mt-2 font-semibold text-neutral-950 dark:text-neutral-50">{rentalView.documentCount}</p>
+											</div>
+											<div className="surface-subtle rounded-2xl px-4 py-3">
+												<p className="text-xs uppercase tracking-[0.12em] text-neutral-500 dark:text-neutral-400">Timeline</p>
+												<p className="mt-2 font-semibold text-neutral-950 dark:text-neutral-50">{rentalView.timelineCount}</p>
+											</div>
+											<div className="surface-subtle rounded-2xl px-4 py-3">
+												<p className="text-xs uppercase tracking-[0.12em] text-neutral-500 dark:text-neutral-400">Updates</p>
+												<p className="mt-2 font-semibold text-neutral-950 dark:text-neutral-50">{rentalView.communicationCount}</p>
+											</div>
+										</div>
+
+										<p className="text-sm font-semibold text-(--branding-700)">Open rental management</p>
+									</div>
+								</button>
+							))}
+						</div>
+					) : (
+						<EmptySection title="No Rentals Yet" message="No rentals are attached to this account." />
+					)}
+				</div>
 			) : null}
-			{activeTab === "status" ? (
-				<StatusTab
-					detail={detail}
-					notes={notes}
-					onNotesChange={onNotesChange}
-					onSubmitAction={onSubmitAction}
-					actionLoading={actionLoading}
-					actionError={actionError}
-				/>
+
+			{activeTab === "trailers" ? (
+				<div className="space-y-4">
+					<Card>
+						<div>
+							<h3 className="font-syne text-2xl font-bold text-neutral-950 dark:text-neutral-50">
+								Trailers on This Account
+							</h3>
+							<p className="mt-2 text-sm text-neutral-600 dark:text-neutral-400">
+								Physical trailers are derived from rental assignments. Open any trailer for full inventory and lifecycle management.
+							</p>
+						</div>
+					</Card>
+
+					{trailerViews.length ? (
+						<div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+							{trailerViews.map((trailer) => (
+								<button
+									key={trailer.id}
+									type="button"
+									onClick={() => onOpenTrailer(trailer.id)}
+									className="rounded-2xl border border-(--border-soft) bg-white/80 p-5 text-left transition hover:border-(--branding-700) hover:bg-white dark:bg-neutral-950/50"
+								>
+									<div className="flex flex-wrap items-start justify-between gap-4">
+										<div className="space-y-2">
+											<p className="font-syne text-2xl font-bold text-neutral-950 dark:text-neutral-50">
+												{trailer.trailer_code || trailer.vin || trailer.id}
+											</p>
+											<p className="text-sm text-neutral-600 dark:text-neutral-400">
+												{trailer.trailer_type || "Trailer"} | {trailer.plate_number || "No plate"}
+											</p>
+											<p className="text-xs text-neutral-500 dark:text-neutral-400">
+												{trailer.linkedRentals.length} linked rental(s)
+											</p>
+										</div>
+										<div className="flex flex-wrap justify-end gap-2">
+											<StatusBadge status={trailer.status} />
+										</div>
+									</div>
+								</button>
+							))}
+						</div>
+					) : (
+						<EmptySection title="No Trailers Linked" message="No trailer assignments are connected to this account yet." />
+					)}
+				</div>
 			) : null}
-			{activeTab === "billing" ? <BillingTab detail={detail} /> : null}
-			{activeTab === "documents" ? <DocumentsTab detail={detail} /> : null}
 		</div>
 	);
 }

@@ -1,66 +1,34 @@
 "use client";
 
-import Link from "next/link";
 import { usePathname } from "next/navigation";
-import LogoutButton from "@/components/auth/LogoutButton";
+import PortalFrame from "@/components/portal/PortalFrame";
 
 const NAV_ITEMS = [
-	{ label: "Overview", href: "/admin" },
-	{ label: "Management", href: "/admin/management" },
-	{ label: "Active Rentals", href: "/admin/rentals" },
-	{ label: "Billing Watchlist", href: "/admin/watchlist" },
-	{ label: "Trailer Inventory", href: "/admin/inventory" },
+	{ id: "overview", label: "Overview", href: "/admin" },
+	{ id: "management", label: "Management", href: "/admin/management" },
+	{ id: "rentals", label: "Rentals", href: "/admin/rentals" },
+	{ id: "billing", label: "Billing Watchlist", href: "/admin/watchlist" },
+	{ id: "trailers", label: "Trailers", href: "/admin/trailers" },
 ];
 
 export default function AdminShell({ adminEmail, children }) {
 	const pathname = usePathname();
+	const activeItemId =
+		NAV_ITEMS.find(
+			(item) =>
+				pathname === item.href ||
+				(item.href !== "/admin" && pathname.startsWith(item.href)),
+		)?.id ?? "overview";
 
 	return (
-		<div className="w-full min-h-screen mt-25 p-5 md:px-10 lg:px-14 pb-10 motion-enter">
-			<div className="grid grid-cols-1 lg:grid-cols-[240px_1fr] gap-6">
-				<aside className="surface-panel rounded-2xl p-5 h-fit">
-					<div className="flex-col items-start gap-5">
-						<div>
-							<p className="text-sm text-neutral-600 dark:text-neutral-400">
-								Admin
-							</p>
-							<p className="font-semibold text-neutral-950 dark:text-neutral-50 break-all">
-								{adminEmail}
-							</p>
-						</div>
-					</div>
-					<nav className="mt-5 flex flex-col gap-2">
-						{NAV_ITEMS.map((item) => {
-							const active =
-								pathname === item.href ||
-								(item.href !== "/admin" && pathname.startsWith(item.href));
-							return (
-								<Link
-									key={item.href}
-									href={item.href}
-									className={`rounded-lg px-3 py-2 text-sm font-semibold transition-colors no-underline! hover:no-underline ${
-										active
-											? "bg-(--branding-700) text-neutral-50"
-											: "surface-subtle text-neutral-800 dark:text-neutral-100"
-									}`}
-								>
-									{item.label}
-								</Link>
-							);
-						})}
-						<LogoutButton className="w-full text-left rounded-lg border border-(--border-soft) px-3 py-2 text-sm font-semibold text-neutral-700 transition hover:bg-neutral-100 dark:text-neutral-200 dark:hover:bg-neutral-900" />
-					</nav>
-				</aside>
-
-				<section className="space-y-5">
-					<header className="surface-panel rounded-2xl p-5">
-						<h1 className="font-syne text-2xl md:text-3xl font-bold text-neutral-950 dark:text-neutral-50">
-							Owner Dashboard
-						</h1>
-					</header>
-					{children}
-				</section>
-			</div>
-		</div>
+		<PortalFrame
+			accountEyebrow="Portal"
+			accountTitle="Admin"
+			accountLines={[`Signed In As ${adminEmail}`]}
+			navItems={NAV_ITEMS}
+			activeItemId={activeItemId}
+		>
+			{children}
+		</PortalFrame>
 	);
 }

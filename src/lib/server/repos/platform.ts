@@ -9,6 +9,15 @@ import type {
 	TenantRole,
 } from "@/lib/contracts/account";
 import type { InterestSubmissionInput } from "@/lib/contracts/interest";
+import type {
+	BillingFrequency,
+	BillingStatus,
+	RentalRecordKind,
+	RentalRequestKind,
+	RentalRequestOutcome,
+	RentalStatus,
+	TrailerStatus,
+} from "@/lib/contracts/rentals";
 
 export type TenantRecord = {
 	id: string;
@@ -76,6 +85,7 @@ export type CommunicationEventRecord = {
 	id: string;
 	tenant_id: string | null;
 	application_id: string | null;
+	rental_id: string | null;
 	recipient_email: string;
 	type: string;
 	status: string;
@@ -105,11 +115,14 @@ export type ApplicationRecord = {
 	submitted_at: string;
 	reviewed_at: string | null;
 	tenant?: TenantRecord;
+	documents?: ApplicationDocumentRecord[];
+	timeline_items?: TimelineItemRecord[];
 };
 
 export type TimelineItemRecord = {
 	id: string;
 	tenant_id: string;
+	rental_id?: string | null;
 	type: string;
 	item_key: string | null;
 	stage: "current" | "upcoming" | "completed";
@@ -139,6 +152,82 @@ export type ApplicationDocumentRecord = {
 	document_type: string;
 	created_at: string;
 	signed_url?: string | null;
+};
+
+export type RentalDocumentRecord = {
+	id: string;
+	rental_id: string;
+	bucket: string;
+	storage_path: string;
+	file_name: string;
+	content_type: string | null;
+	category: string | null;
+	document_type: string;
+	created_by_profile_id: string | null;
+	created_at: string;
+	signed_url?: string | null;
+};
+
+export type TrailerRecord = {
+	id: string;
+	trailer_code: string | null;
+	trailer_type: string | null;
+	plate_number: string | null;
+	vin: string | null;
+	status: TrailerStatus;
+	created_at: string;
+	updated_at: string;
+	assignments?: AssignmentRecord[];
+};
+
+export type AssignmentRecord = {
+	id: string;
+	rental_id: string;
+	trailer_id: string;
+	status: "active" | "expired" | "cancelled";
+	start_date: string | null;
+	end_date: string | null;
+	notes: string | null;
+	created_at: string;
+	updated_at: string;
+	trailer?: TrailerRecord | null;
+	rental?: RentalRecord | null;
+};
+
+export type RentalRecord = {
+	id: string;
+	tenant_id: string;
+	application_id: string | null;
+	status: RentalStatus;
+	billing_status: BillingStatus;
+	billing_frequency: BillingFrequency;
+	rate: number | null;
+	deposit_amount: number | null;
+	contract_start_date: string | null;
+	operational_start_date: string | null;
+	end_date: string | null;
+	stripe_customer_id: string | null;
+	stripe_subscription_id: string | null;
+	stripe_price_id: string | null;
+	stripe_product_id: string | null;
+	current_period_end: string | null;
+	last_invoice_id: string | null;
+	record_kind: RentalRecordKind;
+	request_kind: RentalRequestKind;
+	parent_rental_id: string | null;
+	requested_trailer_count: number | null;
+	requested_trailer_type: string | null;
+	request_summary: string | null;
+	requested_by_profile_id: string | null;
+	resolved_at: string | null;
+	request_outcome: RentalRequestOutcome | null;
+	created_at: string;
+	updated_at: string;
+	assignments?: AssignmentRecord[];
+	tenant?: TenantRecord | null;
+	application?: ApplicationRecord | null;
+	parent_rental?: RentalRecord | null;
+	documents?: RentalDocumentRecord[];
 };
 
 function admin() {
@@ -333,17 +422,7 @@ export async function createTenant(input: {
 	legalName?: string | null;
 	primaryEmail: string;
 	primaryPhone?: string | null;
-	status:
-		| "lead"
-		| "applied"
-		| "under_review"
-		| "feedback_requested"
-		| "approved"
-		| "awaiting_first_payment"
-		| "active"
-		| "past_due"
-		| "suspended"
-		| "closed";
+	status: "active" | "suspended" | "stale";
 }) {
 	const baseSlug = slugify(input.displayName || input.primaryEmail);
 	let candidateSlug = baseSlug || `tenant-${Date.now()}`;
@@ -377,7 +456,7 @@ export async function createTenant(input: {
 }
 
 export async function createInterestSubmission(
-	tenantId: string,
+	tenantId: string | null,
 	input: InterestSubmissionInput
 ) {
 	const { data, error } = await admin()
@@ -401,6 +480,7 @@ export async function createInterestSubmission(
 export async function createCommunicationEvent(input: {
 	tenantId?: string | null;
 	applicationId?: string | null;
+	rentalId?: string | null;
 	recipientEmail: string;
 	type: string;
 	subject?: string | null;
@@ -413,6 +493,7 @@ export async function createCommunicationEvent(input: {
 		.insert({
 			tenant_id: input.tenantId ?? null,
 			application_id: input.applicationId ?? null,
+			rental_id: input.rentalId ?? null,
 			recipient_email: normalizeEmail(input.recipientEmail),
 			type: input.type,
 			subject: input.subject ?? null,
@@ -461,7 +542,7 @@ export async function createApplication(input: {
 		.from("applications")
 		.insert({
 			tenant_id: input.tenantId,
-			status: "applied",
+			status: "submitted",
 			company_name: values.companyName,
 			primary_email: normalizeEmail(values.email),
 			primary_phone: values.phone,
@@ -508,8 +589,35 @@ export async function createApplicationDocument(input: {
 			document_type: input.documentType,
 		})
 		.select("*")
-		.single();
+	.single();
 	return assertData(data as ApplicationDocumentRecord | null, error);
+}
+
+export async function createRentalDocument(input: {
+	rentalId: string;
+	bucket: string;
+	storagePath: string;
+	fileName: string;
+	contentType?: string | null;
+	category?: string | null;
+	documentType: string;
+	createdByProfileId?: string | null;
+}) {
+	const { data, error } = await admin()
+		.from("rental_documents")
+		.insert({
+			rental_id: input.rentalId,
+			bucket: input.bucket,
+			storage_path: input.storagePath,
+			file_name: input.fileName,
+			content_type: input.contentType ?? null,
+			category: input.category ?? null,
+			document_type: input.documentType,
+			created_by_profile_id: input.createdByProfileId ?? null,
+		})
+		.select("*")
+		.single();
+	return assertData(data as RentalDocumentRecord | null, error);
 }
 
 export async function uploadApplicationFile(input: {
@@ -532,7 +640,30 @@ export async function uploadApplicationFile(input: {
 	return storagePath;
 }
 
-async function addSignedUrlsToDocuments<T extends { documents?: ApplicationDocumentRecord[] }>(
+export async function uploadRentalFile(input: {
+	rentalId: string;
+	file: File;
+}) {
+	const buffer = Buffer.from(await input.file.arrayBuffer());
+	const documentId = randomUUID();
+	const storagePath = `rentals/${input.rentalId}/${documentId}-${input.file.name}`;
+	const { error } = await admin()
+		.storage
+		.from("application-documents")
+		.upload(storagePath, buffer, {
+			contentType: input.file.type || "application/octet-stream",
+			upsert: false,
+		});
+
+	if (error) throw new Error(error.message);
+	return storagePath;
+}
+
+type StorageDocumentRecord =
+	| ApplicationDocumentRecord
+	| RentalDocumentRecord;
+
+async function addSignedUrlsToDocuments<T extends { documents?: StorageDocumentRecord[] }>(
 	rows: T[]
 ) {
 	return Promise.all(
@@ -578,6 +709,7 @@ function sortTimelineItems<T extends { timeline_items?: TimelineItemRecord[] }>(
 export async function createTimelineItem(input: {
 	tenantId: string;
 	applicationId?: string | null;
+	rentalId?: string | null;
 	type: "milestone" | "action_required" | "message";
 	itemKey?: string | null;
 	stage?: "current" | "upcoming" | "completed";
@@ -598,6 +730,7 @@ export async function createTimelineItem(input: {
 		.insert({
 			tenant_id: input.tenantId,
 			application_id: input.applicationId ?? null,
+			rental_id: input.rentalId ?? null,
 			type: input.type,
 			item_key: input.itemKey ?? null,
 			stage: input.stage ?? (input.completedAt ? "completed" : "upcoming"),
@@ -659,6 +792,7 @@ export async function listTimelineItemsByApplicationId(applicationId: string) {
 export async function getTimelineItemByKey(input: {
 	tenantId: string;
 	applicationId?: string | null;
+	rentalId?: string | null;
 	itemKey: string;
 }) {
 	const query = admin()
@@ -673,6 +807,12 @@ export async function getTimelineItemByKey(input: {
 		query.is("application_id", null);
 	}
 
+	if (input.rentalId) {
+		query.eq("rental_id", input.rentalId);
+	} else {
+		query.is("rental_id", null);
+	}
+
 	const { data, error } = await query.maybeSingle();
 	if (error) throw new Error(error.message);
 	return (data as TimelineItemRecord | null) ?? null;
@@ -680,6 +820,7 @@ export async function getTimelineItemByKey(input: {
 
 export async function updateTimelineItem(input: {
 	timelineItemId: string;
+	rentalId?: string | null;
 	type?: "milestone" | "action_required" | "message";
 	stage?: "current" | "upcoming" | "completed";
 	title?: string;
@@ -705,6 +846,7 @@ export async function updateTimelineItem(input: {
 	if ("ctaUrl" in input) updates.cta_url = input.ctaUrl ?? null;
 	if ("sortOrder" in input) updates.sort_order = input.sortOrder;
 	if ("metadata" in input) updates.metadata = input.metadata ?? {};
+	if ("rentalId" in input) updates.rental_id = input.rentalId ?? null;
 	if ("updatedByProfileId" in input) {
 		updates.updated_by_profile_id = input.updatedByProfileId ?? null;
 	}
@@ -721,6 +863,7 @@ export async function updateTimelineItem(input: {
 export async function upsertTimelineItemByKey(input: {
 	tenantId: string;
 	applicationId?: string | null;
+	rentalId?: string | null;
 	itemKey: string;
 	type: "milestone" | "action_required" | "message";
 	stage?: "current" | "upcoming" | "completed";
@@ -739,6 +882,7 @@ export async function upsertTimelineItemByKey(input: {
 	const existing = await getTimelineItemByKey({
 		tenantId: input.tenantId,
 		applicationId: input.applicationId ?? null,
+		rentalId: input.rentalId ?? null,
 		itemKey: input.itemKey,
 	});
 
@@ -760,6 +904,7 @@ export async function upsertTimelineItemByKey(input: {
 				...(existing.metadata ?? {}),
 				...(input.metadata ?? {}),
 			},
+			rentalId: input.rentalId ?? existing.rental_id ?? null,
 			updatedByProfileId: input.updatedByProfileId ?? null,
 		});
 	}
@@ -767,6 +912,7 @@ export async function upsertTimelineItemByKey(input: {
 	return createTimelineItem({
 		tenantId: input.tenantId,
 		applicationId: input.applicationId ?? null,
+		rentalId: input.rentalId ?? null,
 		itemKey: input.itemKey,
 		type: input.type,
 		stage: input.stage,
@@ -823,28 +969,463 @@ export async function listApplicationsByTenantIds(tenantIds: string[]) {
 	return (data as ApplicationRecord[]) ?? [];
 }
 
-export async function listRentalsByTenantId(tenantId: string) {
-	const { data, error } = await admin()
-		.from("rentals")
-		.select("*, assignments(*, trailer:trailers(*))")
-		.eq("tenant_id", tenantId)
-		.order("created_at", { ascending: false });
-	if (error) throw new Error(error.message);
-	return data ?? [];
+function rentalSelect() {
+	return "*";
 }
 
-export async function listRentalsByTenantIds(tenantIds: string[]) {
+async function listApplicationsByIds(applicationIds: string[]) {
+	if (!applicationIds.length) {
+		return [] as ApplicationRecord[];
+	}
+
+	const { data, error } = await admin()
+		.from("applications")
+		.select("*, documents:application_documents(*), timeline_items(*)")
+		.in("id", applicationIds);
+	if (error) throw new Error(error.message);
+
+	const rows = await addSignedUrlsToDocuments((data ?? []) as any[]);
+	return rows.map((row) => sortTimelineItems(row as any)) as ApplicationRecord[];
+}
+
+async function listRentalDocumentsByRentalIds(rentalIds: string[]) {
+	if (!rentalIds.length) {
+		return [] as RentalDocumentRecord[];
+	}
+
+	const { data, error } = await admin()
+		.from("rental_documents")
+		.select("*")
+		.in("rental_id", rentalIds)
+		.order("created_at", { ascending: false });
+	if (error) throw new Error(error.message);
+
+	const rows = await addSignedUrlsToDocuments([
+		{
+			documents: ((data as RentalDocumentRecord[] | null) ?? []) as StorageDocumentRecord[],
+		},
+	]);
+
+	return ((rows[0]?.documents as RentalDocumentRecord[] | undefined) ?? []) as RentalDocumentRecord[];
+}
+
+async function listTenantsByIds(tenantIds: string[]) {
 	if (!tenantIds.length) {
-		return [] as any[];
+		return [] as TenantRecord[];
+	}
+
+	const { data, error } = await admin()
+		.from("tenants")
+		.select("*")
+		.in("id", tenantIds);
+	if (error) throw new Error(error.message);
+
+	return (data as TenantRecord[]) ?? [];
+}
+
+async function listAssignmentsByRentalIds(rentalIds: string[]) {
+	if (!rentalIds.length) {
+		return [] as AssignmentRecord[];
+	}
+
+	const { data, error } = await admin()
+		.from("assignments")
+		.select("*, trailer:trailers(*)")
+		.in("rental_id", rentalIds);
+	if (error) throw new Error(error.message);
+
+	return (data as unknown as AssignmentRecord[]) ?? [];
+}
+
+async function attachParentRentals(rentals: RentalRecord[]) {
+	const parentIds = [...new Set(rentals.map((rental) => rental.parent_rental_id).filter(Boolean))];
+	if (!parentIds.length) {
+		return rentals.map((rental) => ({
+			...rental,
+			parent_rental: null,
+		}));
 	}
 
 	const { data, error } = await admin()
 		.from("rentals")
 		.select("*")
+		.in("id", parentIds);
+	if (error) throw new Error(error.message);
+
+	const parentMap = new Map(
+		((data as RentalRecord[] | null) ?? []).map((rental) => [rental.id, rental])
+	);
+
+	return rentals.map((rental) => ({
+		...rental,
+		parent_rental: rental.parent_rental_id
+			? parentMap.get(rental.parent_rental_id) ?? null
+			: null,
+	}));
+}
+
+async function hydrateRentals(rentals: RentalRecord[]) {
+	if (!rentals.length) {
+		return [] as RentalRecord[];
+	}
+
+	const rentalIds = rentals.map((rental) => rental.id);
+	const tenantIds = [...new Set(rentals.map((rental) => rental.tenant_id).filter(Boolean))];
+	const applicationIds = [
+		...new Set(rentals.map((rental) => rental.application_id).filter(Boolean)),
+	] as string[];
+
+	const [tenants, applications, assignments, documents] = await Promise.all([
+		listTenantsByIds(tenantIds),
+		listApplicationsByIds(applicationIds),
+		listAssignmentsByRentalIds(rentalIds),
+		listRentalDocumentsByRentalIds(rentalIds),
+	]);
+
+	const tenantById = new Map(tenants.map((tenant) => [tenant.id, tenant]));
+	const applicationById = new Map(
+		applications.map((application) => [application.id, application]),
+	);
+	const assignmentsByRentalId = new Map<string, AssignmentRecord[]>();
+	const documentsByRentalId = new Map<string, RentalDocumentRecord[]>();
+
+	for (const assignment of assignments) {
+		const current = assignmentsByRentalId.get(assignment.rental_id) ?? [];
+		current.push(assignment);
+		assignmentsByRentalId.set(assignment.rental_id, current);
+	}
+
+	for (const document of documents) {
+		const current = documentsByRentalId.get(document.rental_id) ?? [];
+		current.push(document);
+		documentsByRentalId.set(document.rental_id, current);
+	}
+
+	const rentalsWithRelations = rentals.map((rental) => ({
+		...rental,
+		tenant: tenantById.get(rental.tenant_id) ?? null,
+		application: rental.application_id
+			? applicationById.get(rental.application_id) ?? null
+			: null,
+		assignments: assignmentsByRentalId.get(rental.id) ?? [],
+		documents: documentsByRentalId.get(rental.id) ?? [],
+	}));
+
+	return attachParentRentals(rentalsWithRelations);
+}
+
+export async function listRentalsByTenantId(tenantId: string) {
+	const { data, error } = await admin()
+		.from("rentals")
+		.select(rentalSelect())
+		.eq("tenant_id", tenantId)
+		.order("created_at", { ascending: false });
+	if (error) throw new Error(error.message);
+	return hydrateRentals((data as unknown as RentalRecord[]) ?? []);
+}
+
+export async function listRentalsByTenantIds(tenantIds: string[]) {
+	if (!tenantIds.length) {
+		return [] as RentalRecord[];
+	}
+
+	const { data, error } = await admin()
+		.from("rentals")
+		.select(rentalSelect())
 		.in("tenant_id", tenantIds)
 		.order("created_at", { ascending: false });
 	if (error) throw new Error(error.message);
-	return data ?? [];
+	return hydrateRentals((data as unknown as RentalRecord[]) ?? []);
+}
+
+export async function listAdminRentals() {
+	const { data, error } = await admin()
+		.from("rentals")
+		.select(rentalSelect())
+		.order("created_at", { ascending: false });
+	if (error) throw new Error(error.message);
+	return hydrateRentals((data as unknown as RentalRecord[]) ?? []);
+}
+
+export async function getRentalById(rentalId: string) {
+	const { data, error } = await admin()
+		.from("rentals")
+		.select(rentalSelect())
+		.eq("id", rentalId)
+		.maybeSingle();
+	if (error) throw new Error(error.message);
+	if (!data) return null;
+	const [rental] = await hydrateRentals([data as unknown as RentalRecord]);
+	return rental ?? null;
+}
+
+export async function getRentalByApplicationId(applicationId: string) {
+	const { data, error } = await admin()
+		.from("rentals")
+		.select(rentalSelect())
+		.eq("application_id", applicationId)
+		.order("created_at", { ascending: false })
+		.limit(1)
+		.maybeSingle();
+	if (error) throw new Error(error.message);
+	if (!data) return null;
+	const [rental] = await hydrateRentals([data as unknown as RentalRecord]);
+	return rental ?? null;
+}
+
+export async function createRental(input: {
+	tenantId: string;
+	applicationId?: string | null;
+	status?: RentalStatus;
+	billingStatus?: BillingStatus;
+	billingFrequency?: BillingFrequency;
+	rate?: number | null;
+	depositAmount?: number | null;
+	contractStartDate?: string | null;
+	operationalStartDate?: string | null;
+	endDate?: string | null;
+	recordKind?: RentalRecordKind;
+	requestKind?: RentalRequestKind;
+	parentRentalId?: string | null;
+	requestedTrailerCount?: number | null;
+	requestedTrailerType?: string | null;
+	requestSummary?: string | null;
+	requestedByProfileId?: string | null;
+	resolvedAt?: string | null;
+	requestOutcome?: RentalRequestOutcome | null;
+}) {
+	const { data, error } = await admin()
+		.from("rentals")
+		.insert({
+			tenant_id: input.tenantId,
+			application_id: input.applicationId ?? null,
+			status: input.status ?? "draft",
+			billing_status: input.billingStatus ?? "draft",
+			billing_frequency: input.billingFrequency ?? "monthly",
+			rate: input.rate ?? null,
+			deposit_amount: input.depositAmount ?? null,
+			contract_start_date: input.contractStartDate ?? null,
+			operational_start_date: input.operationalStartDate ?? null,
+			end_date: input.endDate ?? null,
+			record_kind: input.recordKind ?? "agreement",
+			request_kind: input.requestKind ?? "admin_created",
+			parent_rental_id: input.parentRentalId ?? null,
+			requested_trailer_count: input.requestedTrailerCount ?? null,
+			requested_trailer_type: input.requestedTrailerType ?? null,
+			request_summary: input.requestSummary ?? null,
+			requested_by_profile_id: input.requestedByProfileId ?? null,
+			resolved_at: input.resolvedAt ?? null,
+			request_outcome: input.requestOutcome ?? null,
+		})
+		.select(rentalSelect())
+		.single();
+	const rental = assertData(data as RentalRecord | null, error);
+	const [hydratedRental] = await hydrateRentals([rental]);
+	return hydratedRental;
+}
+
+export async function updateRental(input: {
+	rentalId: string;
+	tenantId?: string;
+	status?: RentalStatus;
+	billingStatus?: BillingStatus;
+	billingFrequency?: BillingFrequency;
+	rate?: number | null;
+	depositAmount?: number | null;
+	contractStartDate?: string | null;
+	operationalStartDate?: string | null;
+	endDate?: string | null;
+	recordKind?: RentalRecordKind;
+	requestKind?: RentalRequestKind;
+	parentRentalId?: string | null;
+	requestedTrailerCount?: number | null;
+	requestedTrailerType?: string | null;
+	requestSummary?: string | null;
+	requestedByProfileId?: string | null;
+	resolvedAt?: string | null;
+	requestOutcome?: RentalRequestOutcome | null;
+	stripeCustomerId?: string | null;
+	stripeSubscriptionId?: string | null;
+	stripePriceId?: string | null;
+	stripeProductId?: string | null;
+	currentPeriodEnd?: string | null;
+	lastInvoiceId?: string | null;
+}) {
+	const updates: Record<string, unknown> = {};
+	if ("tenantId" in input) updates.tenant_id = input.tenantId;
+	if ("status" in input) updates.status = input.status;
+	if ("billingStatus" in input) updates.billing_status = input.billingStatus;
+	if ("billingFrequency" in input) updates.billing_frequency = input.billingFrequency;
+	if ("rate" in input) updates.rate = input.rate ?? null;
+	if ("depositAmount" in input) updates.deposit_amount = input.depositAmount ?? null;
+	if ("contractStartDate" in input) updates.contract_start_date = input.contractStartDate ?? null;
+	if ("operationalStartDate" in input) {
+		updates.operational_start_date = input.operationalStartDate ?? null;
+	}
+	if ("endDate" in input) updates.end_date = input.endDate ?? null;
+	if ("recordKind" in input) updates.record_kind = input.recordKind;
+	if ("requestKind" in input) updates.request_kind = input.requestKind;
+	if ("parentRentalId" in input) updates.parent_rental_id = input.parentRentalId ?? null;
+	if ("requestedTrailerCount" in input) {
+		updates.requested_trailer_count = input.requestedTrailerCount ?? null;
+	}
+	if ("requestedTrailerType" in input) {
+		updates.requested_trailer_type = input.requestedTrailerType ?? null;
+	}
+	if ("requestSummary" in input) updates.request_summary = input.requestSummary ?? null;
+	if ("requestedByProfileId" in input) {
+		updates.requested_by_profile_id = input.requestedByProfileId ?? null;
+	}
+	if ("resolvedAt" in input) updates.resolved_at = input.resolvedAt ?? null;
+	if ("requestOutcome" in input) updates.request_outcome = input.requestOutcome ?? null;
+	if ("stripeCustomerId" in input) updates.stripe_customer_id = input.stripeCustomerId ?? null;
+	if ("stripeSubscriptionId" in input) {
+		updates.stripe_subscription_id = input.stripeSubscriptionId ?? null;
+	}
+	if ("stripePriceId" in input) updates.stripe_price_id = input.stripePriceId ?? null;
+	if ("stripeProductId" in input) updates.stripe_product_id = input.stripeProductId ?? null;
+	if ("currentPeriodEnd" in input) updates.current_period_end = input.currentPeriodEnd ?? null;
+	if ("lastInvoiceId" in input) updates.last_invoice_id = input.lastInvoiceId ?? null;
+
+	const { data, error } = await admin()
+		.from("rentals")
+		.update(updates)
+		.eq("id", input.rentalId)
+		.select(rentalSelect())
+		.single();
+	const rental = assertData(data as RentalRecord | null, error);
+	const [hydratedRental] = await hydrateRentals([rental]);
+	return hydratedRental;
+}
+
+export async function deleteRental(rentalId: string) {
+	const { error } = await admin().from("rentals").delete().eq("id", rentalId);
+	if (error) throw new Error(error.message);
+}
+
+export async function createAssignment(input: {
+	rentalId: string;
+	trailerId: string;
+	status?: "active" | "expired" | "cancelled";
+	startDate?: string | null;
+	endDate?: string | null;
+	notes?: string | null;
+}) {
+	const { data, error } = await admin()
+		.from("assignments")
+		.insert({
+			rental_id: input.rentalId,
+			trailer_id: input.trailerId,
+			status: input.status ?? "active",
+			start_date: input.startDate ?? null,
+			end_date: input.endDate ?? null,
+			notes: input.notes ?? null,
+		})
+		.select("*, trailer:trailers(*)")
+		.single();
+	return assertData(data as AssignmentRecord | null, error);
+}
+
+export async function updateAssignment(input: {
+	assignmentId: string;
+	rentalId?: string;
+	status?: "active" | "expired" | "cancelled";
+	startDate?: string | null;
+	endDate?: string | null;
+	notes?: string | null;
+}) {
+	const updates: Record<string, unknown> = {};
+	if ("rentalId" in input) updates.rental_id = input.rentalId;
+	if ("status" in input) updates.status = input.status;
+	if ("startDate" in input) updates.start_date = input.startDate ?? null;
+	if ("endDate" in input) updates.end_date = input.endDate ?? null;
+	if ("notes" in input) updates.notes = input.notes ?? null;
+
+	const { data, error } = await admin()
+		.from("assignments")
+		.update(updates)
+		.eq("id", input.assignmentId)
+		.select("*, trailer:trailers(*)")
+		.single();
+	return assertData(data as AssignmentRecord | null, error);
+}
+
+export async function listActiveAssignmentsByTrailerIds(trailerIds: string[]) {
+	if (!trailerIds.length) {
+		return [] as AssignmentRecord[];
+	}
+
+	const { data, error } = await admin()
+		.from("assignments")
+		.select("*, rental:rentals(*)")
+		.in("trailer_id", trailerIds)
+		.eq("status", "active");
+	if (error) throw new Error(error.message);
+	return (data as unknown as AssignmentRecord[]) ?? [];
+}
+
+export async function listTrailers() {
+	const { data, error } = await admin()
+		.from("trailers")
+		.select("*, assignments(*, rental:rentals(*, tenant:tenants(*)))")
+		.order("created_at", { ascending: false });
+	if (error) throw new Error(error.message);
+	return (data as unknown as TrailerRecord[]) ?? [];
+}
+
+export async function getTrailerById(trailerId: string) {
+	const { data, error } = await admin()
+		.from("trailers")
+		.select("*, assignments(*, rental:rentals(*, tenant:tenants(*)))")
+		.eq("id", trailerId)
+		.maybeSingle();
+	if (error) throw new Error(error.message);
+	return (data as unknown as TrailerRecord | null) ?? null;
+}
+
+export async function createTrailer(input: {
+	trailerCode?: string | null;
+	trailerType: string;
+	plateNumber?: string | null;
+	vin?: string | null;
+	status?: TrailerStatus;
+}) {
+	const { data, error } = await admin()
+		.from("trailers")
+		.insert({
+			trailer_code: input.trailerCode ?? null,
+			trailer_type: input.trailerType,
+			plate_number: input.plateNumber ?? null,
+			vin: input.vin ?? null,
+			status: input.status ?? "available",
+		})
+		.select("*")
+		.single();
+	return assertData(data as TrailerRecord | null, error);
+}
+
+export async function updateTrailer(input: {
+	trailerId: string;
+	trailerCode?: string | null;
+	trailerType?: string | null;
+	plateNumber?: string | null;
+	vin?: string | null;
+	status?: TrailerStatus;
+}) {
+	const updates: Record<string, unknown> = {};
+	if ("trailerCode" in input) updates.trailer_code = input.trailerCode ?? null;
+	if ("trailerType" in input) updates.trailer_type = input.trailerType ?? null;
+	if ("plateNumber" in input) updates.plate_number = input.plateNumber ?? null;
+	if ("vin" in input) updates.vin = input.vin ?? null;
+	if ("status" in input) updates.status = input.status;
+
+	const { data, error } = await admin()
+		.from("trailers")
+		.update(updates)
+		.eq("id", input.trailerId)
+		.select("*, assignments(*, rental:rentals(*, tenant:tenants(*)))")
+		.single();
+	return assertData(data as TrailerRecord | null, error);
 }
 
 export async function listApplications() {
@@ -861,6 +1442,16 @@ export async function listCommunicationEventsByTenantId(tenantId: string) {
 		.from("communication_events")
 		.select("*")
 		.eq("tenant_id", tenantId)
+		.order("created_at", { ascending: false });
+	if (error) throw new Error(error.message);
+	return (data as CommunicationEventRecord[]) ?? [];
+}
+
+export async function listCommunicationEventsByRentalId(rentalId: string) {
+	const { data, error } = await admin()
+		.from("communication_events")
+		.select("*")
+		.eq("rental_id", rentalId)
 		.order("created_at", { ascending: false });
 	if (error) throw new Error(error.message);
 	return (data as CommunicationEventRecord[]) ?? [];
@@ -1149,34 +1740,64 @@ export async function upsertStaffMembership(input: {
 }
 
 export async function getApplicationSummaryCounts() {
-	const { count: leadsCount, error: leadsError } = await admin()
-		.from("tenants")
-		.select("*", { count: "exact", head: true })
-		.eq("status", "lead");
-	if (leadsError) throw new Error(leadsError.message);
+	const [
+		{ count: draftRentalsCount, error: draftRentalsError },
+		{ count: customerReviewCount, error: customerReviewError },
+		{ count: changesPendingCount, error: changesPendingError },
+		{ count: awaitingPaymentCount, error: awaitingPaymentError },
+		{ count: liveAgreementCount, error: liveAgreementError },
+		{ count: staleTenantsCount, error: staleTenantsError },
+		{ count: suspendedAgreementCount, error: suspendedAgreementError },
+	] = await Promise.all([
+		admin()
+			.from("rentals")
+			.select("*", { count: "exact", head: true })
+			.eq("record_kind", "request")
+			.eq("status", "draft"),
+		admin()
+			.from("rentals")
+			.select("*", { count: "exact", head: true })
+			.eq("status", "customer_review"),
+		admin()
+			.from("rentals")
+			.select("*", { count: "exact", head: true })
+			.eq("status", "changes_pending"),
+		admin()
+			.from("rentals")
+			.select("*", { count: "exact", head: true })
+			.eq("record_kind", "agreement")
+			.eq("status", "awaiting_first_payment"),
+		admin()
+			.from("rentals")
+			.select("*", { count: "exact", head: true })
+			.eq("record_kind", "agreement")
+			.in("status", ["active", "past_due", "suspended"]),
+		admin()
+			.from("tenants")
+			.select("*", { count: "exact", head: true })
+			.eq("status", "stale"),
+		admin()
+			.from("rentals")
+			.select("*", { count: "exact", head: true })
+			.eq("record_kind", "agreement")
+			.in("status", ["past_due", "suspended"]),
+	]);
 
-	const { count: appliedCount, error: appliedError } = await admin()
-		.from("applications")
-		.select("*", { count: "exact", head: true })
-		.in("status", ["applied", "under_review", "feedback_requested"]);
-	if (appliedError) throw new Error(appliedError.message);
-
-	const { count: approvedCount, error: approvedError } = await admin()
-		.from("applications")
-		.select("*", { count: "exact", head: true })
-		.in("status", ["approved", "awaiting_first_payment"]);
-	if (approvedError) throw new Error(approvedError.message);
-
-	const { count: activeTenantsCount, error: activeError } = await admin()
-		.from("tenants")
-		.select("*", { count: "exact", head: true })
-		.in("status", ["active", "past_due", "suspended"]);
-	if (activeError) throw new Error(activeError.message);
+	if (draftRentalsError) throw new Error(draftRentalsError.message);
+	if (customerReviewError) throw new Error(customerReviewError.message);
+	if (changesPendingError) throw new Error(changesPendingError.message);
+	if (awaitingPaymentError) throw new Error(awaitingPaymentError.message);
+	if (liveAgreementError) throw new Error(liveAgreementError.message);
+	if (staleTenantsError) throw new Error(staleTenantsError.message);
+	if (suspendedAgreementError) throw new Error(suspendedAgreementError.message);
 
 	return {
-		leads: leadsCount ?? 0,
-		applicationsInReview: appliedCount ?? 0,
-		approvedAwaitingActivation: approvedCount ?? 0,
-		activeTenants: activeTenantsCount ?? 0,
+		draftRentals: draftRentalsCount ?? 0,
+		customerReview: customerReviewCount ?? 0,
+		changesPending: changesPendingCount ?? 0,
+		awaitingFirstPayment: awaitingPaymentCount ?? 0,
+		liveAgreements: liveAgreementCount ?? 0,
+		staleTenants: staleTenantsCount ?? 0,
+		billingAttention: suspendedAgreementCount ?? 0,
 	};
 }

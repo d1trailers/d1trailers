@@ -17,6 +17,7 @@ export async function sendTransactionalEmail(input: {
 	recipientEmail: string;
 	tenantId?: string | null;
 	applicationId?: string | null;
+	rentalId?: string | null;
 	subject: string;
 	html: string;
 	text: string;
@@ -27,6 +28,7 @@ export async function sendTransactionalEmail(input: {
 	const event = await createCommunicationEvent({
 		tenantId: input.tenantId ?? null,
 		applicationId: input.applicationId ?? null,
+		rentalId: input.rentalId ?? null,
 		recipientEmail: input.recipientEmail,
 		type: input.type,
 		subject: input.subject,

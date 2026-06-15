@@ -1,10 +1,9 @@
 import {
 	canAccessPortal,
+	canAccessTimeline,
 	getCurrentUserContext,
 	hasTenantPermission,
 } from "@/lib/server/services/access";
-
-const ACTIVE_PORTAL_TENANT_STATUSES = new Set(["active", "past_due", "suspended"]);
 
 export async function requirePortalApiSession(requiredPermission = null) {
 	const context = await getCurrentUserContext();
@@ -17,17 +16,7 @@ export async function requirePortalApiSession(requiredPermission = null) {
 		};
 	}
 
-	if (!ACTIVE_PORTAL_TENANT_STATUSES.has(tenant.status)) {
-		return {
-			error: Response.json(
-				{ error: "Portal access is only available for active tenant accounts." },
-				{ status: 403 }
-			),
-			context: null,
-		};
-	}
-
-	if (!canAccessPortal(membership)) {
+	if (!canAccessPortal(membership) && !canAccessTimeline(membership)) {
 		return {
 			error: Response.json(
 				{ error: "You do not have permission to access this account portal." },

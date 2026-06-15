@@ -212,6 +212,8 @@ export async function listAccountMembers(context: UserContext) {
 	]);
 
 	return {
+		actorProfileId: context.userId,
+		actorEmail: context.email,
 		activeTenant: {
 			id: actorMembership.tenant.id,
 			name: actorMembership.tenant.display_name,
@@ -221,7 +223,7 @@ export async function listAccountMembers(context: UserContext) {
 		},
 		members: members.map(mapMembershipForClient),
 		invitations: invitations
-			.filter((invitation) => invitation.status !== "accepted")
+			.filter((invitation) => invitation.status === "pending")
 			.map(mapInvitationForClient),
 	};
 }

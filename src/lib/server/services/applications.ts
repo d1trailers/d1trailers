@@ -13,9 +13,7 @@ import {
 	createApplication,
 	createApplicationDocument,
 	createTenant,
-	getTenantByPrimaryEmail,
 	updateApplicationReview,
-	updateTenantStatus,
 	uploadApplicationFile,
 	getApplicationById,
 } from "@/lib/server/repos/platform";
@@ -23,9 +21,9 @@ import { ensureOwnerInvitationForTenant } from "@/lib/server/services/accounts";
 import { sendTransactionalEmail } from "@/lib/server/services/communications";
 import type { UserContext } from "@/lib/server/services/access";
 import {
-	syncJourneyAfterApplicationReview,
-	syncJourneyAfterApplicationSubmission,
-} from "@/lib/server/services/journey";
+	syncRentalAfterApplicationSubmission,
+} from "@/lib/server/services/rentals";
+import { syncJourneyAfterApplicationSubmission } from "@/lib/server/services/journey";
 
 const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
 const ALLOWED_FILE_TYPES = new Set([
@@ -133,18 +131,13 @@ export async function submitApplication(formData: FormData) {
 		])
 	) as Record<RequiredApplicationDocumentField, File>;
 
-	let tenant = await getTenantByPrimaryEmail(payload.email);
-	if (!tenant) {
-		tenant = await createTenant({
-			displayName: payload.companyName,
-			legalName: payload.companyName,
-			primaryEmail: payload.email,
-			primaryPhone: payload.phone,
-			status: "applied",
-		});
-	} else {
-		tenant = await updateTenantStatus(tenant.id, "applied");
-	}
+	const tenant = await createTenant({
+		displayName: payload.companyName,
+		legalName: payload.companyName,
+		primaryEmail: payload.email,
+		primaryPhone: payload.phone,
+		status: "stale",
+	});
 
 	await ensureOwnerInvitationForTenant({
 		tenantId: tenant.id,
@@ -156,8 +149,16 @@ export async function submitApplication(formData: FormData) {
 		payload,
 	});
 
+	const initialRental = await syncRentalAfterApplicationSubmission({
+		tenantId: tenant.id,
+		applicationId: application.id,
+		billingFrequency: application.billing_frequency,
+		rentalDuration: application.rental_duration,
+	});
+
 	await syncJourneyAfterApplicationSubmission({
 		application,
+		rentalId: initialRental.id,
 	});
 
 	await Promise.all(
@@ -201,6 +202,7 @@ export async function submitApplication(formData: FormData) {
 	return {
 		tenantId: tenant.id,
 		applicationId: application.id,
+		rentalId: initialRental.id,
 	};
 }
 
@@ -230,36 +232,6 @@ export async function reviewApplication(input: {
 		decisionByProfileId: input.actorContext.userId,
 	});
 
-	await updateTenantStatus(application.tenant_id, nextStatus);
-
-	await syncJourneyAfterApplicationReview({
-		application,
-		nextStatus,
-		reviewNotes: input.reviewNotes,
-		actorProfileId: input.actorContext.userId,
-	});
-
-	if (nextStatus === "approved") {
-		const emailContent = buildApplicationApprovedEmail({
-			firstName: application.owner_first_name,
-			companyName: application.company_name,
-		});
-
-		await sendTransactionalEmail({
-			type: "application_approved",
-			recipientEmail: application.primary_email,
-			tenantId: application.tenant_id,
-			applicationId: application.id,
-			subject: emailContent.subject,
-			html: emailContent.html,
-			text: emailContent.text,
-			payloadSnapshot: {
-				applicationId: application.id,
-				status: nextStatus,
-			},
-		});
-	}
-
 	if (nextStatus === "feedback_requested") {
 		const emailContent = buildFeedbackRequestedEmail({
 			firstName: application.owner_first_name,
@@ -278,6 +250,29 @@ export async function reviewApplication(input: {
 			payloadSnapshot: {
 				applicationId: application.id,
 				status: nextStatus,
+			},
+		});
+	}
+
+	if (nextStatus === "approved") {
+		const emailContent = buildApplicationApprovedEmail({
+			firstName: application.owner_first_name,
+			companyName: application.company_name,
+		});
+
+		await sendTransactionalEmail({
+			type: "application_approved",
+			recipientEmail: application.primary_email,
+			tenantId: application.tenant_id,
+			applicationId: application.id,
+			subject: emailContent.subject,
+			html: emailContent.html,
+			text: emailContent.text,
+			payloadSnapshot: {
+				applicationId: application.id,
+				status: nextStatus,
+				note:
+					"Legacy application review action was used. Rental workflow remains driven from rentals.",
 			},
 		});
 	}

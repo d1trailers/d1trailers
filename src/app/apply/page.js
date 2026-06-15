@@ -110,7 +110,7 @@ function Form() {
 
 			formRef.current?.reset();
 			setSuccess(
-				"Application submitted. Our team will review it shortly, and you can use this email to log in and follow the application timeline."
+				"Application submitted. Our team will review it shortly, then send your first rental draft through the portal tied to this email."
 			);
 			setSubmitting(false);
 		} catch {
