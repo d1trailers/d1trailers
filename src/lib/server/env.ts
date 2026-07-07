@@ -15,6 +15,23 @@ const envSchema = z.object({
 		.toLowerCase()
 		.regex(/^[a-z]{3}$/)
 		.default("usd"),
+	DOCUSIGN_INTEGRATION_KEY: z.string().min(1).optional().or(z.literal("")),
+	DOCUSIGN_ACCOUNT_ID: z.string().min(1).optional().or(z.literal("")),
+	DOCUSIGN_USER_ID: z.string().min(1).optional().or(z.literal("")),
+	DOCUSIGN_PRIVATE_KEY: z.string().min(1).optional().or(z.literal("")),
+	DOCUSIGN_AUTH_BASE_PATH: z
+		.string()
+		.min(1)
+		.optional()
+		.or(z.literal(""))
+		.default("account-d.docusign.com"),
+	DOCUSIGN_BASE_PATH: z
+		.string()
+		.url()
+		.optional()
+		.or(z.literal(""))
+		.default("https://demo.docusign.net/restapi"),
+	DOCUSIGN_WEBHOOK_HMAC_SECRET: z.string().min(1).optional().or(z.literal("")),
 	STAFF_BOOTSTRAP_EMAILS: z.string().optional().default(""),
 	NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
 });
@@ -30,6 +47,15 @@ const parsedEnv = envSchema.safeParse({
 	STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY,
 	STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET,
 	STRIPE_DEFAULT_CURRENCY: process.env.STRIPE_DEFAULT_CURRENCY || "usd",
+	DOCUSIGN_INTEGRATION_KEY: process.env.DOCUSIGN_INTEGRATION_KEY,
+	DOCUSIGN_ACCOUNT_ID: process.env.DOCUSIGN_ACCOUNT_ID,
+	DOCUSIGN_USER_ID: process.env.DOCUSIGN_USER_ID,
+	DOCUSIGN_PRIVATE_KEY: process.env.DOCUSIGN_PRIVATE_KEY,
+	DOCUSIGN_AUTH_BASE_PATH:
+		process.env.DOCUSIGN_AUTH_BASE_PATH || "account-d.docusign.com",
+	DOCUSIGN_BASE_PATH:
+		process.env.DOCUSIGN_BASE_PATH || "https://demo.docusign.net/restapi",
+	DOCUSIGN_WEBHOOK_HMAC_SECRET: process.env.DOCUSIGN_WEBHOOK_HMAC_SECRET,
 	STAFF_BOOTSTRAP_EMAILS: process.env.STAFF_BOOTSTRAP_EMAILS,
 	NODE_ENV: process.env.NODE_ENV,
 });
@@ -67,4 +93,37 @@ export function requireStripeWebhookSecret() {
 		throw new Error("STRIPE_WEBHOOK_SECRET is required for Stripe webhook verification.");
 	}
 	return env.STRIPE_WEBHOOK_SECRET;
+}
+
+export function isDocuSignConfigured() {
+	return Boolean(
+		env.DOCUSIGN_INTEGRATION_KEY &&
+			env.DOCUSIGN_ACCOUNT_ID &&
+			env.DOCUSIGN_USER_ID &&
+			env.DOCUSIGN_PRIVATE_KEY
+	);
+}
+
+export function requireDocuSignConfig() {
+	if (!isDocuSignConfigured()) {
+		throw new Error(
+			"DocuSign is not configured. Set DOCUSIGN_INTEGRATION_KEY, DOCUSIGN_ACCOUNT_ID, DOCUSIGN_USER_ID, and DOCUSIGN_PRIVATE_KEY."
+		);
+	}
+
+	return {
+		integrationKey: env.DOCUSIGN_INTEGRATION_KEY,
+		accountId: env.DOCUSIGN_ACCOUNT_ID,
+		userId: env.DOCUSIGN_USER_ID,
+		privateKey: env.DOCUSIGN_PRIVATE_KEY,
+		authBasePath: env.DOCUSIGN_AUTH_BASE_PATH || "account-d.docusign.com",
+		basePath: env.DOCUSIGN_BASE_PATH || "https://demo.docusign.net/restapi",
+	};
+}
+
+export function requireDocuSignWebhookSecret() {
+	if (!env.DOCUSIGN_WEBHOOK_HMAC_SECRET) {
+		throw new Error("DOCUSIGN_WEBHOOK_HMAC_SECRET is required for DocuSign webhook verification.");
+	}
+	return env.DOCUSIGN_WEBHOOK_HMAC_SECRET;
 }

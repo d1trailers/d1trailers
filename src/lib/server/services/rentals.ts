@@ -305,6 +305,37 @@ function mapRentalDocument(document: RentalDocumentRecord) {
 	};
 }
 
+function mapSigningPacket(packet: NonNullable<RentalRecord["signing_packets"]>[number]) {
+	return {
+		id: packet.id,
+		rentalId: packet.rental_id,
+		envelopeId: packet.docusign_envelope_id,
+		status: packet.status,
+		signerName: packet.signer_name,
+		signerEmail: packet.signer_email,
+		documentCount: packet.document_count,
+		billingActivationStatus: packet.billing_activation_status,
+		billingCheckoutUrl: packet.billing_checkout_url,
+		billingCheckoutSessionId: packet.billing_checkout_session_id,
+		billingErrorMessage: packet.billing_error_message,
+		completedAt: packet.completed_at,
+		declinedAt: packet.declined_at,
+		voidedAt: packet.voided_at,
+		lastSyncedAt: packet.last_synced_at,
+		errorMessage: packet.error_message,
+		documents: Array.isArray(packet.documents)
+			? packet.documents.map((document) => ({
+					id: document.id,
+					documentName: document.document_name,
+					docusignDocumentId: document.docusign_document_id,
+					status: document.status,
+					rentalDocumentId: document.rental_document_id,
+					sortOrder: document.sort_order,
+			  }))
+			: [],
+	};
+}
+
 function mapBillingInvoiceLine(line: any) {
 	return {
 		id: line.id,
@@ -464,6 +495,9 @@ export function mapRental(rental: RentalRecord) {
 			: [],
 		billingInvoices: Array.isArray(rental.billing_invoices)
 			? rental.billing_invoices.map(mapBillingInvoice)
+			: [],
+		signingPackets: Array.isArray(rental.signing_packets)
+			? rental.signing_packets.map(mapSigningPacket)
 			: [],
 		assignments,
 		trailers: assignments

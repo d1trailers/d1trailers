@@ -1,9 +1,5 @@
 import { requireAuthenticatedAccountContext } from "@/lib/accountApi";
 import {
-	activateRentalBilling,
-	BillingOperationError,
-} from "@/lib/server/services/billing";
-import {
 	RentalOperationError,
 	submitAccountRentalModification,
 } from "@/lib/server/services/rentals";
@@ -22,21 +18,19 @@ export async function PATCH(request, { params }) {
 
 	try {
 		const body = await request.json();
+		if (body?.action === "approve_draft") {
+			return Response.json(
+				{ error: "Use the signing workflow to approve this proposal." },
+				{ status: 409 }
+			);
+		}
 		const rental = await submitAccountRentalModification(
 			auth.context,
 			rentalId,
 			body
 		);
-		const billing =
-			body?.action === "approve_draft"
-				? await activateRentalBilling(rental.id)
-				: null;
-		return Response.json({ rental, billing }, { status: 200 });
+		return Response.json({ rental }, { status: 200 });
 	} catch (error) {
-		if (error instanceof BillingOperationError) {
-			return Response.json({ error: error.message }, { status: error.status });
-		}
-
 		if (error instanceof RentalOperationError) {
 			return Response.json({ error: error.message }, { status: error.status });
 		}

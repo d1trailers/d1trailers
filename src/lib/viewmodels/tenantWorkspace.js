@@ -151,6 +151,52 @@ function normalizeBillingInvoice(invoice) {
 	};
 }
 
+function normalizeSigningPacket(packet) {
+	return {
+		id: packet.id,
+		rentalId: packet.rental_id ?? packet.rentalId ?? null,
+		envelopeId: packet.docusign_envelope_id ?? packet.envelopeId ?? null,
+		status: packet.status ?? "draft",
+		signerName: packet.signer_name ?? packet.signerName ?? null,
+		signerEmail: packet.signer_email ?? packet.signerEmail ?? null,
+		documentCount: parseNumericValue(
+			packet.document_count ?? packet.documentCount,
+		) ?? 0,
+		billingActivationStatus:
+			packet.billing_activation_status ??
+			packet.billingActivationStatus ??
+			"pending",
+		billingCheckoutUrl:
+			packet.billing_checkout_url ?? packet.billingCheckoutUrl ?? null,
+		billingCheckoutSessionId:
+			packet.billing_checkout_session_id ??
+			packet.billingCheckoutSessionId ??
+			null,
+		billingErrorMessage:
+			packet.billing_error_message ?? packet.billingErrorMessage ?? null,
+		completedAt: packet.completed_at ?? packet.completedAt ?? null,
+		declinedAt: packet.declined_at ?? packet.declinedAt ?? null,
+		voidedAt: packet.voided_at ?? packet.voidedAt ?? null,
+		lastSyncedAt: packet.last_synced_at ?? packet.lastSyncedAt ?? null,
+		errorMessage: packet.error_message ?? packet.errorMessage ?? null,
+		documents: Array.isArray(packet.documents)
+			? packet.documents.map((document) => ({
+					id: document.id,
+					documentName:
+						document.document_name ?? document.documentName ?? "Document",
+					docusignDocumentId:
+						document.docusign_document_id ??
+						document.docusignDocumentId ??
+						null,
+					status: document.status,
+					rentalDocumentId:
+						document.rental_document_id ?? document.rentalDocumentId ?? null,
+					sortOrder: document.sort_order ?? document.sortOrder ?? 100,
+			  }))
+			: [],
+	};
+}
+
 function normalizeRental(rental, tenantName) {
 	const assignments = Array.isArray(rental.assignments)
 		? rental.assignments.map((assignment) => ({
@@ -200,6 +246,11 @@ function normalizeRental(rental, tenantName) {
 			? rental.billing_invoices.map(normalizeBillingInvoice)
 			: Array.isArray(rental.billingInvoices)
 				? rental.billingInvoices.map(normalizeBillingInvoice)
+				: [],
+		signingPackets: Array.isArray(rental.signing_packets)
+			? rental.signing_packets.map(normalizeSigningPacket)
+			: Array.isArray(rental.signingPackets)
+				? rental.signingPackets.map(normalizeSigningPacket)
 				: [],
 		assignments,
 	};

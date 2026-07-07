@@ -18,6 +18,7 @@ import {
 import RentalTrailerChecklist from "@/components/rentals/RentalTrailerChecklist";
 import RentalDocumentUploadCard from "@/components/rentals/RentalDocumentUploadCard";
 import ConfirmActionModal from "@/components/ui/ConfirmActionModal";
+import DocuSignSigningModal from "@/components/tenant/DocuSignSigningModal";
 import {
 	RentalBillingCard,
 	RentalCommunicationsCard,
@@ -70,6 +71,17 @@ function isClosedRequestStatus(status) {
 	return ["declined", "cancelled", "returned"].includes(status);
 }
 
+function getActiveSigningPacket(rental) {
+	const packets = Array.isArray(rental?.signingPackets) ? rental.signingPackets : [];
+	return (
+		packets.find((packet) =>
+			["draft", "sent", "in_progress"].includes(packet.status)
+		) ??
+		packets.find((packet) => packet.status === "completed" && packet.billingCheckoutUrl) ??
+		null
+	);
+}
+
 export default function TenantRentalModal({
 	open,
 	onClose,
@@ -97,6 +109,9 @@ export default function TenantRentalModal({
 	const [removingAssignmentId, setRemovingAssignmentId] = useState("");
 	const [pendingAssignmentRemoval, setPendingAssignmentRemoval] = useState(null);
 	const [pendingRentalCancellation, setPendingRentalCancellation] = useState(false);
+	const [signingPacket, setSigningPacket] = useState(null);
+	const [signingUrl, setSigningUrl] = useState("");
+	const [signingModalOpen, setSigningModalOpen] = useState(false);
 
 	const canModifyRental =
 		Boolean(rental) &&
@@ -104,6 +119,7 @@ export default function TenantRentalModal({
 		!isClosedRequestStatus(rental.status);
 	const canApproveDraft = canModifyRental && rental.status === "customer_review";
 	const canCancelRental = canModifyRental;
+	const activeSigningPacket = getActiveSigningPacket(rental);
 	const canAccessDocuments = canViewDocuments || canManageRentals;
 	const approvedTermsLocked =
 		rental?.recordKind === "agreement" ||
@@ -135,6 +151,8 @@ export default function TenantRentalModal({
 			});
 			setSubmitError("");
 			setSubmitSuccess("");
+			setSigningPacket(getActiveSigningPacket(rental));
+			setSigningUrl("");
 		});
 
 		return () => window.cancelAnimationFrame(frame);
@@ -235,6 +253,75 @@ export default function TenantRentalModal({
 		} catch {
 			setSubmitError("Unable to remove this trailer assignment.");
 			setRemovingAssignmentId("");
+		}
+	}
+
+	async function handleStartSigning() {
+		setSubmitting(true);
+		setSubmitError("");
+		setSubmitSuccess("");
+
+		try {
+			const response = await fetch(
+				`/api/account/rentals/${rental.id}/signing/start`,
+				{ method: "POST" }
+			);
+			const json = await response.json().catch(() => ({}));
+			if (!response.ok) {
+				setSubmitError(
+					typeof json?.error === "string"
+						? json.error
+						: "Unable to start signing."
+				);
+				setSubmitting(false);
+				return;
+			}
+
+			setSigningPacket(json.packet ?? null);
+			setSigningUrl(json.recipientViewUrl || "");
+			setSigningModalOpen(true);
+			setSubmitSuccess("Signing packet ready.");
+			setSubmitting(false);
+		} catch {
+			setSubmitError("Unable to start signing.");
+			setSubmitting(false);
+		}
+	}
+
+	async function handleContinueSigning(packet) {
+		if (!packet?.id) return;
+		setSubmitting(true);
+		setSubmitError("");
+		setSubmitSuccess("");
+
+		if (packet.billingCheckoutUrl) {
+			window.location.href = packet.billingCheckoutUrl;
+			return;
+		}
+
+		try {
+			const response = await fetch(
+				`/api/account/signing-packets/${packet.id}/recipient-view`,
+				{ method: "POST" }
+			);
+			const json = await response.json().catch(() => ({}));
+			if (!response.ok) {
+				setSubmitError(
+					typeof json?.error === "string"
+						? json.error
+						: "Unable to continue signing."
+				);
+				setSubmitting(false);
+				return;
+			}
+
+			setSigningPacket(packet);
+			setSigningUrl(json.recipientViewUrl || "");
+			setSigningModalOpen(true);
+			setSubmitting(false);
+		} catch {
+			setSubmitError("Unable to continue signing.");
+			setSubmitting(false);
 		}
 	}
 
@@ -387,10 +474,22 @@ export default function TenantRentalModal({
 									<ActionButton
 										type="button"
 										tone="positive"
-										onClick={() => handleRentalAction("approve_draft")}
+										onClick={handleStartSigning}
 										disabled={submitting}
 									>
-										Approve Proposal
+										Approve Proposal and Sign
+									</ActionButton>
+								) : null}
+								{activeSigningPacket && !canApproveDraft ? (
+									<ActionButton
+										type="button"
+										tone="positive"
+										onClick={() => handleContinueSigning(activeSigningPacket)}
+										disabled={submitting}
+									>
+										{activeSigningPacket.billingCheckoutUrl
+											? "Continue to Payment"
+											: "Continue Signing"}
 									</ActionButton>
 								) : null}
 								{canCancelRental ? (
@@ -484,6 +583,13 @@ export default function TenantRentalModal({
 				message="This will cancel the rental workflow and release active trailer assignments. Use this only when you are sure the rental should be closed."
 				confirmLabel="Cancel Rental"
 				loading={submitting}
+			/>
+			<DocuSignSigningModal
+				open={signingModalOpen}
+				onClose={() => setSigningModalOpen(false)}
+				packet={signingPacket}
+				recipientViewUrl={signingUrl}
+				onPacketUpdate={setSigningPacket}
 			/>
 		</ScreenModal>
 	);

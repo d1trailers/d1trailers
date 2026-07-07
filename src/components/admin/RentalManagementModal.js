@@ -97,6 +97,141 @@ function buildCommunicationDraft(rental, application) {
 	};
 }
 
+function getLatestSigningPacket(rental) {
+	const packets = Array.isArray(rental?.signingPackets) ? rental.signingPackets : [];
+	return packets[0] ?? null;
+}
+
+function SigningPacketSummary({ packet }) {
+	const [voiding, setVoiding] = useState(false);
+	const [voidError, setVoidError] = useState("");
+
+	if (!packet) {
+		return (
+			<Card>
+				<div className="space-y-2">
+					<h3 className="font-syne text-2xl font-bold text-neutral-950 dark:text-neutral-50">
+						Signing Packet
+					</h3>
+					<p className="text-sm text-neutral-600 dark:text-neutral-400">
+						No DocuSign packet has been created for this rental yet.
+					</p>
+				</div>
+			</Card>
+		);
+	}
+
+	async function handleVoidPacket() {
+		setVoiding(true);
+		setVoidError("");
+		try {
+			const response = await fetch(`/api/admin/signing-packets/${packet.id}/void`, {
+				method: "POST",
+			});
+			const json = await response.json().catch(() => ({}));
+			if (!response.ok) {
+				setVoidError(
+					typeof json?.error === "string"
+						? json.error
+						: "Unable to void signing packet."
+				);
+				setVoiding(false);
+				return;
+			}
+			window.location.reload();
+		} catch {
+			setVoidError("Unable to void signing packet.");
+			setVoiding(false);
+		}
+	}
+
+	const canVoid = ["draft", "sent", "in_progress", "failed"].includes(packet.status);
+
+	return (
+		<Card>
+			<div className="space-y-4">
+				<div className="flex flex-wrap items-start justify-between gap-3">
+					<div>
+						<h3 className="font-syne text-2xl font-bold text-neutral-950 dark:text-neutral-50">
+							Signing Packet
+						</h3>
+						<p className="mt-1 text-sm text-neutral-600 dark:text-neutral-400">
+							{packet.signerName || packet.signerEmail} | {packet.signerEmail}
+						</p>
+					</div>
+					<div className="flex flex-wrap gap-2">
+						<StatusBadge status={packet.status} />
+						<StatusBadge status={packet.billingActivationStatus} />
+					</div>
+				</div>
+				<div className="grid gap-3 md:grid-cols-3">
+					<div className="rounded-2xl border border-(--border-soft) p-3">
+						<p className="text-xs uppercase tracking-[0.12em] text-neutral-500">
+							Envelope
+						</p>
+						<p className="mt-1 break-all text-sm font-semibold text-neutral-950 dark:text-neutral-50">
+							{packet.envelopeId || "Pending"}
+						</p>
+					</div>
+					<div className="rounded-2xl border border-(--border-soft) p-3">
+						<p className="text-xs uppercase tracking-[0.12em] text-neutral-500">
+							Completed
+						</p>
+						<p className="mt-1 text-sm font-semibold text-neutral-950 dark:text-neutral-50">
+							{packet.completedAt
+								? new Date(packet.completedAt).toLocaleString()
+								: "Not complete"}
+						</p>
+					</div>
+					<div className="rounded-2xl border border-(--border-soft) p-3">
+						<p className="text-xs uppercase tracking-[0.12em] text-neutral-500">
+							Documents
+						</p>
+						<p className="mt-1 text-sm font-semibold text-neutral-950 dark:text-neutral-50">
+							{packet.documents?.length || 0} / {packet.documentCount || 0}
+						</p>
+					</div>
+				</div>
+				{packet.documents?.length ? (
+					<div className="space-y-2">
+						{packet.documents.map((document) => (
+							<div
+								key={document.id}
+								className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-(--border-soft) px-3 py-2"
+							>
+								<p className="text-sm font-semibold text-neutral-950 dark:text-neutral-50">
+									{document.documentName}
+								</p>
+								<StatusBadge status={document.status} />
+							</div>
+						))}
+					</div>
+				) : null}
+				{packet.billingErrorMessage ? (
+					<p className="text-sm font-medium text-red-600">
+						{packet.billingErrorMessage}
+					</p>
+				) : null}
+				{voidError ? (
+					<p className="text-sm font-medium text-red-600">{voidError}</p>
+				) : null}
+				{canVoid ? (
+					<div className="flex justify-end">
+						<ActionButton
+							type="button"
+							tone="danger"
+							onClick={handleVoidPacket}
+							disabled={voiding}
+						>
+							{voiding ? "Voiding..." : "Void / Allow Recreate"}
+						</ActionButton>
+					</div>
+				) : null}
+			</div>
+		</Card>
+	);
+}
+
 export default function RentalManagementModal({
 	open,
 	onClose,
@@ -118,6 +253,7 @@ export default function RentalManagementModal({
 	maxWidthClass = "max-w-6xl",
 }) {
 	const rental = detail?.rental ?? null;
+	const signingPacket = getLatestSigningPacket(rental);
 	const rentalView = detail?.rentalView ?? null;
 	const availableTrailers = Array.isArray(detail?.availableTrailers)
 		? detail.availableTrailers
@@ -604,6 +740,8 @@ export default function RentalManagementModal({
 										emptyMessage="No trailers match this search."
 									/>
 								) : null}
+
+								{rental ? <SigningPacketSummary packet={signingPacket} /> : null}
 
 								{rental ? (
 									<RentalDocumentUploadCard

@@ -17,6 +17,7 @@
 		"@types/react-dom": "^19.2.3",
 		"airtable": "^0.12.2",
 		"cookie": "^1.1.1",
+		"docusign-esign": "^9.0.0",
 		"googleapis": "^170.0.0",
 		"jsonwebtoken": "^9.0.3",
 		"next": "^16.2.6",

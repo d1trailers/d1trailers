@@ -167,6 +167,86 @@ export type RentalDocumentRecord = {
 	signed_url?: string | null;
 };
 
+export type DocuSignTemplateRecord = {
+	id: string;
+	template_key: string;
+	display_name: string;
+	docusign_template_id: string;
+	role_name: string;
+	required: boolean;
+	active: boolean;
+	sort_order: number;
+	tab_config: Record<string, unknown>;
+	metadata: Record<string, unknown>;
+	created_at: string;
+	updated_at: string;
+};
+
+export type RentalSigningPacketStatus =
+	| "draft"
+	| "sent"
+	| "in_progress"
+	| "completed"
+	| "declined"
+	| "voided"
+	| "failed";
+
+export type RentalSigningPacketRecord = {
+	id: string;
+	tenant_id: string;
+	rental_id: string;
+	docusign_envelope_id: string | null;
+	status: RentalSigningPacketStatus;
+	signer_profile_id: string | null;
+	signer_name: string | null;
+	signer_email: string;
+	document_count: number;
+	billing_activation_status: "pending" | "ready" | "completed" | "failed" | "skipped";
+	billing_checkout_url: string | null;
+	billing_checkout_session_id: string | null;
+	billing_error_message: string | null;
+	completed_at: string | null;
+	declined_at: string | null;
+	voided_at: string | null;
+	last_synced_at: string | null;
+	error_message: string | null;
+	metadata: Record<string, unknown>;
+	created_at: string;
+	updated_at: string;
+	documents?: RentalSigningPacketDocumentRecord[];
+};
+
+export type RentalSigningPacketDocumentRecord = {
+	id: string;
+	packet_id: string;
+	rental_id: string;
+	template_id: string | null;
+	docusign_document_id: string | null;
+	document_name: string;
+	status: "pending" | "signed" | "stored" | "failed";
+	bucket: string | null;
+	storage_path: string | null;
+	rental_document_id: string | null;
+	sort_order: number;
+	metadata: Record<string, unknown>;
+	created_at: string;
+	updated_at: string;
+};
+
+export type DocuSignEventRecord = {
+	id: string;
+	event_hash: string;
+	event_type: string;
+	docusign_envelope_id: string | null;
+	packet_id: string | null;
+	processing_status: "pending" | "processed" | "failed" | "skipped";
+	error_message: string | null;
+	raw_payload: Record<string, unknown>;
+	processed_at: string | null;
+	created_at: string;
+	updated_at: string;
+};
+
 export type BillingInvoiceLineSource =
 	| "rental_charge"
 	| "deposit"
@@ -314,6 +394,7 @@ export type RentalRecord = {
 	parent_rental?: RentalRecord | null;
 	documents?: RentalDocumentRecord[];
 	billing_invoices?: BillingInvoiceRecord[];
+	signing_packets?: RentalSigningPacketRecord[];
 };
 
 function admin() {
@@ -765,6 +846,27 @@ export async function uploadRentalFile(input: {
 	return storagePath;
 }
 
+export async function uploadRentalBuffer(input: {
+	rentalId: string;
+	fileName: string;
+	contentType: string;
+	buffer: Buffer;
+}) {
+	const documentId = randomUUID();
+	const safeName = input.fileName || "document.pdf";
+	const storagePath = `rentals/${input.rentalId}/${documentId}-${safeName}`;
+	const { error } = await admin()
+		.storage
+		.from("application-documents")
+		.upload(storagePath, input.buffer, {
+			contentType: input.contentType || "application/octet-stream",
+			upsert: false,
+		});
+
+	if (error) throw new Error(error.message);
+	return storagePath;
+}
+
 type StorageDocumentRecord =
 	| ApplicationDocumentRecord
 	| RentalDocumentRecord;
@@ -795,6 +897,221 @@ async function addSignedUrlsToDocuments<T extends { documents?: StorageDocumentR
 			};
 		})
 	);
+}
+
+export async function listActiveDocuSignTemplates() {
+	const { data, error } = await admin()
+		.from("docusign_templates")
+		.select("*")
+		.eq("active", true)
+		.eq("required", true)
+		.order("sort_order", { ascending: true })
+		.order("created_at", { ascending: true });
+	if (error) throw new Error(error.message);
+	return (data as DocuSignTemplateRecord[]) ?? [];
+}
+
+export async function getRentalSigningPacketById(packetId: string) {
+	const { data, error } = await admin()
+		.from("rental_signing_packets")
+		.select("*, documents:rental_signing_packet_documents(*)")
+		.eq("id", packetId)
+		.maybeSingle();
+	if (error) throw new Error(error.message);
+	return (data as RentalSigningPacketRecord | null) ?? null;
+}
+
+export async function getRentalSigningPacketByEnvelopeId(envelopeId: string) {
+	const { data, error } = await admin()
+		.from("rental_signing_packets")
+		.select("*, documents:rental_signing_packet_documents(*)")
+		.eq("docusign_envelope_id", envelopeId)
+		.maybeSingle();
+	if (error) throw new Error(error.message);
+	return (data as RentalSigningPacketRecord | null) ?? null;
+}
+
+export async function getActiveRentalSigningPacketByRentalId(rentalId: string) {
+	const { data, error } = await admin()
+		.from("rental_signing_packets")
+		.select("*, documents:rental_signing_packet_documents(*)")
+		.eq("rental_id", rentalId)
+		.in("status", ["draft", "sent", "in_progress"])
+		.order("created_at", { ascending: false })
+		.limit(1)
+		.maybeSingle();
+	if (error) throw new Error(error.message);
+	return (data as RentalSigningPacketRecord | null) ?? null;
+}
+
+export async function createRentalSigningPacket(input: {
+	tenantId: string;
+	rentalId: string;
+	envelopeId?: string | null;
+	status?: RentalSigningPacketStatus;
+	signerProfileId?: string | null;
+	signerName?: string | null;
+	signerEmail: string;
+	documentCount?: number;
+	metadata?: Record<string, unknown>;
+}) {
+	const { data, error } = await admin()
+		.from("rental_signing_packets")
+		.insert({
+			tenant_id: input.tenantId,
+			rental_id: input.rentalId,
+			docusign_envelope_id: input.envelopeId ?? null,
+			status: input.status ?? "draft",
+			signer_profile_id: input.signerProfileId ?? null,
+			signer_name: input.signerName ?? null,
+			signer_email: normalizeEmail(input.signerEmail),
+			document_count: input.documentCount ?? 0,
+			metadata: input.metadata ?? {},
+		})
+		.select("*")
+		.single();
+	return assertData(data as RentalSigningPacketRecord | null, error);
+}
+
+export async function updateRentalSigningPacket(input: {
+	packetId: string;
+	envelopeId?: string | null;
+	status?: RentalSigningPacketStatus;
+	documentCount?: number;
+	billingActivationStatus?: RentalSigningPacketRecord["billing_activation_status"];
+	billingCheckoutUrl?: string | null;
+	billingCheckoutSessionId?: string | null;
+	billingErrorMessage?: string | null;
+	completedAt?: string | null;
+	declinedAt?: string | null;
+	voidedAt?: string | null;
+	lastSyncedAt?: string | null;
+	errorMessage?: string | null;
+	metadata?: Record<string, unknown>;
+}) {
+	const updates: Record<string, unknown> = {};
+	if ("envelopeId" in input) updates.docusign_envelope_id = input.envelopeId ?? null;
+	if (input.status) updates.status = input.status;
+	if ("documentCount" in input) updates.document_count = input.documentCount ?? 0;
+	if (input.billingActivationStatus) updates.billing_activation_status = input.billingActivationStatus;
+	if ("billingCheckoutUrl" in input) updates.billing_checkout_url = input.billingCheckoutUrl ?? null;
+	if ("billingCheckoutSessionId" in input) updates.billing_checkout_session_id = input.billingCheckoutSessionId ?? null;
+	if ("billingErrorMessage" in input) updates.billing_error_message = input.billingErrorMessage ?? null;
+	if ("completedAt" in input) updates.completed_at = input.completedAt ?? null;
+	if ("declinedAt" in input) updates.declined_at = input.declinedAt ?? null;
+	if ("voidedAt" in input) updates.voided_at = input.voidedAt ?? null;
+	if ("lastSyncedAt" in input) updates.last_synced_at = input.lastSyncedAt ?? null;
+	if ("errorMessage" in input) updates.error_message = input.errorMessage ?? null;
+	if ("metadata" in input) updates.metadata = input.metadata ?? {};
+
+	const { data, error } = await admin()
+		.from("rental_signing_packets")
+		.update(updates)
+		.eq("id", input.packetId)
+		.select("*, documents:rental_signing_packet_documents(*)")
+		.single();
+	return assertData(data as RentalSigningPacketRecord | null, error);
+}
+
+export async function createRentalSigningPacketDocument(input: {
+	packetId: string;
+	rentalId: string;
+	templateId?: string | null;
+	docusignDocumentId?: string | null;
+	documentName: string;
+	status?: RentalSigningPacketDocumentRecord["status"];
+	bucket?: string | null;
+	storagePath?: string | null;
+	rentalDocumentId?: string | null;
+	sortOrder?: number;
+	metadata?: Record<string, unknown>;
+}) {
+	const { data, error } = await admin()
+		.from("rental_signing_packet_documents")
+		.insert({
+			packet_id: input.packetId,
+			rental_id: input.rentalId,
+			template_id: input.templateId ?? null,
+			docusign_document_id: input.docusignDocumentId ?? null,
+			document_name: input.documentName,
+			status: input.status ?? "pending",
+			bucket: input.bucket ?? null,
+			storage_path: input.storagePath ?? null,
+			rental_document_id: input.rentalDocumentId ?? null,
+			sort_order: input.sortOrder ?? 100,
+			metadata: input.metadata ?? {},
+		})
+		.select("*")
+		.single();
+	return assertData(data as RentalSigningPacketDocumentRecord | null, error);
+}
+
+export async function updateRentalSigningPacketDocument(input: {
+	documentId: string;
+	docusignDocumentId?: string | null;
+	documentName?: string;
+	status?: RentalSigningPacketDocumentRecord["status"];
+	bucket?: string | null;
+	storagePath?: string | null;
+	rentalDocumentId?: string | null;
+	metadata?: Record<string, unknown>;
+}) {
+	const updates: Record<string, unknown> = {};
+	if ("docusignDocumentId" in input) updates.docusign_document_id = input.docusignDocumentId ?? null;
+	if ("documentName" in input) updates.document_name = input.documentName;
+	if (input.status) updates.status = input.status;
+	if ("bucket" in input) updates.bucket = input.bucket ?? null;
+	if ("storagePath" in input) updates.storage_path = input.storagePath ?? null;
+	if ("rentalDocumentId" in input) updates.rental_document_id = input.rentalDocumentId ?? null;
+	if ("metadata" in input) updates.metadata = input.metadata ?? {};
+
+	const { data, error } = await admin()
+		.from("rental_signing_packet_documents")
+		.update(updates)
+		.eq("id", input.documentId)
+		.select("*")
+		.single();
+	return assertData(data as RentalSigningPacketDocumentRecord | null, error);
+}
+
+export async function upsertDocuSignEvent(input: {
+	eventHash: string;
+	eventType: string;
+	envelopeId?: string | null;
+	packetId?: string | null;
+	processingStatus?: DocuSignEventRecord["processing_status"];
+	errorMessage?: string | null;
+	rawPayload?: Record<string, unknown>;
+	processedAt?: string | null;
+}) {
+	const { data, error } = await admin()
+		.from("docusign_events")
+		.upsert(
+			{
+				event_hash: input.eventHash,
+				event_type: input.eventType,
+				docusign_envelope_id: input.envelopeId ?? null,
+				packet_id: input.packetId ?? null,
+				processing_status: input.processingStatus ?? "pending",
+				error_message: input.errorMessage ?? null,
+				raw_payload: input.rawPayload ?? {},
+				processed_at: input.processedAt ?? null,
+			},
+			{ onConflict: "event_hash" }
+		)
+		.select("*")
+		.single();
+	return assertData(data as DocuSignEventRecord | null, error);
+}
+
+export async function getDocuSignEventByHash(eventHash: string) {
+	const { data, error } = await admin()
+		.from("docusign_events")
+		.select("*")
+		.eq("event_hash", eventHash)
+		.maybeSingle();
+	if (error) throw new Error(error.message);
+	return (data as DocuSignEventRecord | null) ?? null;
 }
 
 function sortTimelineItems<T extends { timeline_items?: TimelineItemRecord[] }>(row: T) {
@@ -1170,6 +1487,35 @@ async function listRequestedTrailerTypesByRentalIds(rentalIds: string[]) {
 	return (data as RentalRequestedTrailerTypeRecord[]) ?? [];
 }
 
+async function listSigningPacketsByRentalIds(rentalIds: string[]) {
+	if (!rentalIds.length) {
+		return [] as RentalSigningPacketRecord[];
+	}
+
+	const { data, error } = await admin()
+		.from("rental_signing_packets")
+		.select("*, documents:rental_signing_packet_documents(*)")
+		.in("rental_id", rentalIds)
+		.order("created_at", { ascending: false });
+	if (error) throw new Error(error.message);
+
+	const packets = ((data as RentalSigningPacketRecord[] | null) ?? []).map(
+		(packet) => ({
+			...packet,
+			documents: Array.isArray(packet.documents)
+				? [...packet.documents].sort((left, right) => {
+						if ((left.sort_order ?? 100) !== (right.sort_order ?? 100)) {
+							return (left.sort_order ?? 100) - (right.sort_order ?? 100);
+						}
+						return String(left.created_at).localeCompare(String(right.created_at));
+				  })
+				: [],
+		})
+	);
+
+	return packets;
+}
+
 async function listBillingInvoiceLinesByInvoiceIds(invoiceIds: string[]) {
 	if (!invoiceIds.length) {
 		return [] as BillingInvoiceLineRecord[];
@@ -1259,6 +1605,7 @@ async function hydrateRentals(rentals: RentalRecord[]) {
 		requestedTrailerTypes,
 		documents,
 		billingInvoices,
+		signingPackets,
 	] = await Promise.all([
 		listTenantsByIds(tenantIds),
 		listApplicationsByIds(applicationIds),
@@ -1266,6 +1613,7 @@ async function hydrateRentals(rentals: RentalRecord[]) {
 		listRequestedTrailerTypesByRentalIds(rentalIds),
 		listRentalDocumentsByRentalIds(rentalIds),
 		listBillingInvoicesByRentalIds(rentalIds),
+		listSigningPacketsByRentalIds(rentalIds),
 	]);
 
 	const tenantById = new Map(tenants.map((tenant) => [tenant.id, tenant]));
@@ -1279,6 +1627,7 @@ async function hydrateRentals(rentals: RentalRecord[]) {
 	>();
 	const documentsByRentalId = new Map<string, RentalDocumentRecord[]>();
 	const billingInvoicesByRentalId = new Map<string, BillingInvoiceRecord[]>();
+	const signingPacketsByRentalId = new Map<string, RentalSigningPacketRecord[]>();
 
 	for (const assignment of assignments) {
 		const current = assignmentsByRentalId.get(assignment.rental_id) ?? [];
@@ -1309,6 +1658,12 @@ async function hydrateRentals(rentals: RentalRecord[]) {
 		billingInvoicesByRentalId.set(invoice.rental_id, current);
 	}
 
+	for (const packet of signingPackets) {
+		const current = signingPacketsByRentalId.get(packet.rental_id) ?? [];
+		current.push(packet);
+		signingPacketsByRentalId.set(packet.rental_id, current);
+	}
+
 	const rentalsWithRelations = rentals.map((rental) => ({
 		...rental,
 		tenant: tenantById.get(rental.tenant_id) ?? null,
@@ -1320,6 +1675,7 @@ async function hydrateRentals(rentals: RentalRecord[]) {
 			requestedTrailerTypesByRentalId.get(rental.id) ?? [],
 		documents: documentsByRentalId.get(rental.id) ?? [],
 		billing_invoices: billingInvoicesByRentalId.get(rental.id) ?? [],
+		signing_packets: signingPacketsByRentalId.get(rental.id) ?? [],
 	}));
 
 	return attachParentRentals(rentalsWithRelations);
