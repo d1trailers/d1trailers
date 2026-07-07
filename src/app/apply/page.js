@@ -1,8 +1,15 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { PlusIcon, TrashIcon } from "@heroicons/react/24/outline";
+import {
+	CheckCircleIcon,
+	DocumentPlusIcon,
+	PaperClipIcon,
+	PlusIcon,
+	TrashIcon,
+} from "@heroicons/react/24/outline";
 import Card from "@/components/ui/Card";
+import ScreenModal from "@/components/ui/ScreenModal";
 
 const DOCUMENT_OPTIONS = [
 	{ value: "utilityBill1", label: "Utility Bill (1 of 2)", required: true },
@@ -72,6 +79,7 @@ function getDocumentOption(value) {
 function getMissingRequiredDocuments(documents) {
 	const selectedRequiredTypes = new Set(
 		documents
+			.filter((document) => document.file)
 			.map((document) => document.type)
 			.filter((type) => getDocumentOption(type).required),
 	);
@@ -81,11 +89,21 @@ function getMissingRequiredDocuments(documents) {
 	);
 }
 
-function createDocumentRow(type) {
+function createDocumentRow(type, file) {
 	return {
 		id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
 		type,
+		file,
+		fileName: file?.name ?? "Attached file",
+		fileSize: file?.size ?? 0,
 	};
+}
+
+function formatFileSize(size) {
+	if (!Number.isFinite(size) || size <= 0) return "File attached";
+	if (size < 1024) return `${size} B`;
+	if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+	return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 export default function Apply() {
@@ -107,6 +125,12 @@ export default function Apply() {
 function Form() {
 	const formRef = useRef(null);
 	const [documents, setDocuments] = useState([]);
+	const [documentModalOpen, setDocumentModalOpen] = useState(false);
+	const [documentDraft, setDocumentDraft] = useState({
+		type: DOCUMENT_OPTIONS[0].value,
+		file: null,
+	});
+	const [documentDraftError, setDocumentDraftError] = useState("");
 	const [submitting, setSubmitting] = useState(false);
 	const [error, setError] = useState("");
 	const [success, setSuccess] = useState("");
@@ -116,26 +140,44 @@ function Form() {
 
 	const sectionClass = "surface-panel rounded-2xl p-5 md:p-6 space-y-4";
 	const missingRequiredDocuments = getMissingRequiredDocuments(documents);
+	const attachedRequiredTypes = new Set(
+		documents
+			.filter((document) => document.file && getDocumentOption(document.type).required)
+			.map((document) => document.type),
+	);
 
-	function handleAddDocument() {
+	function handleOpenDocumentModal() {
 		const nextType = missingRequiredDocuments[0]?.value ?? "other";
-		setDocuments((currentDocuments) => [
-			...currentDocuments,
-			createDocumentRow(nextType),
-		]);
+		setDocumentDraft({ type: nextType, file: null });
+		setDocumentDraftError("");
+		setDocumentModalOpen(true);
 	}
 
-	function handleDocumentTypeChange(documentId, nextType) {
-		setDocuments((currentDocuments) =>
-			currentDocuments.map((document) =>
-				document.id === documentId
-					? {
-							...document,
-							type: nextType,
-						}
-					: document,
+	function handleCloseDocumentModal() {
+		setDocumentModalOpen(false);
+		setDocumentDraftError("");
+		setDocumentDraft({ type: DOCUMENT_OPTIONS[0].value, file: null });
+	}
+
+	function handleAttachDocument() {
+		const selectedOption = getDocumentOption(documentDraft.type);
+
+		if (!documentDraft.file) {
+			setDocumentDraftError("Choose a file before attaching this document.");
+			return;
+		}
+
+		setDocuments((currentDocuments) => [
+			...currentDocuments.filter(
+				(document) =>
+					!(
+						selectedOption.required &&
+						document.type === documentDraft.type
+					),
 			),
-		);
+			createDocumentRow(documentDraft.type, documentDraft.file),
+		]);
+		handleCloseDocumentModal();
 	}
 
 	function handleRemoveDocument(documentId) {
@@ -163,6 +205,13 @@ function Form() {
 			}
 
 			const formData = new FormData(event.currentTarget);
+			for (const document of documents) {
+				if (!document.file) continue;
+				const inputName =
+					document.type === "other" ? "otherDocuments" : document.type;
+				formData.append(inputName, document.file, document.fileName);
+			}
+
 			const response = await fetch("/api/applications", {
 				method: "POST",
 				body: formData,
@@ -181,6 +230,7 @@ function Form() {
 
 			formRef.current?.reset();
 			setDocuments([]);
+			handleCloseDocumentModal();
 			setSuccess(
 				"Account application submitted. You can sign in with this email and create rental requests from your portal once your account access is claimed."
 			);
@@ -397,35 +447,55 @@ function Form() {
 						</div>
 						<button
 							type="button"
-							onClick={handleAddDocument}
+							onClick={handleOpenDocumentModal}
 							className="inline-flex items-center justify-center gap-2 rounded-xl bg-neutral-950 px-4 py-2.5 text-sm font-bold text-neutral-50 transition-colors hover:bg-neutral-800 dark:bg-neutral-50 dark:text-neutral-950 dark:hover:bg-neutral-200"
 						>
-							<PlusIcon className="h-5 w-5" aria-hidden="true" />
+							<DocumentPlusIcon className="h-5 w-5" aria-hidden="true" />
 							Add Document
 						</button>
 					</div>
 
 					<div className="rounded-2xl border border-dashed border-(--border-soft) bg-neutral-50/80 p-4 dark:bg-neutral-950/20">
-						<p className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
-							Required checklist
-						</p>
-						<div className="mt-3 flex flex-wrap gap-2">
+						<div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+							<p className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+								Required checklist
+							</p>
+							<p className="text-xs font-semibold text-neutral-500 dark:text-neutral-400">
+								{missingRequiredDocuments.length
+									? `${missingRequiredDocuments.length} still needed`
+									: "All required documents attached"}
+							</p>
+						</div>
+						<div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
 							{DOCUMENT_OPTIONS.filter((option) => option.required).map(
 								(option) => {
 									const complete = !missingRequiredDocuments.some(
 										(document) => document.value === option.value,
 									);
 									return (
-										<span
+										<div
 											key={option.value}
-											className={`rounded-full px-3 py-1 text-xs font-semibold ${
+											className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold ${
 												complete
-													? "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-200"
-													: "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-200"
+													? "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/15 dark:text-emerald-200"
+													: "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/15 dark:text-amber-200"
 											}`}
 										>
-											{complete ? "Added" : "Needed"} · {option.label}
-										</span>
+											{complete ? (
+												<CheckCircleIcon
+													className="h-4 w-4 shrink-0"
+													aria-hidden="true"
+												/>
+											) : (
+												<span
+													className="h-2.5 w-2.5 shrink-0 rounded-full bg-current"
+													aria-hidden="true"
+												/>
+											)}
+											<span>
+												{complete ? "Added" : "Needed"} - {option.label}
+											</span>
+										</div>
 									);
 								},
 							)}
@@ -433,92 +503,165 @@ function Form() {
 					</div>
 
 					{documents.length ? (
-						<div className="space-y-3">
+						<div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
 							{documents.map((document) => {
-								const selectedRequiredTypes = new Set(
-									documents
-										.filter((candidate) => candidate.id !== document.id)
-										.map((candidate) => candidate.type)
-										.filter((type) => getDocumentOption(type).required),
-								);
 								const selectedOption = getDocumentOption(document.type);
-								const inputName =
-									document.type === "other" ? "otherDocuments" : document.type;
 
 								return (
 									<div
 										key={document.id}
-										className="grid grid-cols-1 gap-3 rounded-2xl border border-(--border-soft) bg-white/80 p-4 dark:bg-neutral-950/30 md:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)_auto]"
+										className="flex items-start justify-between gap-3 rounded-2xl border border-(--border-soft) bg-white/80 p-4 shadow-sm dark:bg-neutral-950/30"
 									>
-										<label className="space-y-1.5">
-											<span className="text-xs font-bold uppercase tracking-[0.12em] text-neutral-500">
-												Document Type
-											</span>
-											<select
-												value={document.type}
-												onChange={(event) =>
-													handleDocumentTypeChange(
-														document.id,
-														event.target.value,
-													)
-												}
-												className={inputClass}
+										<div className="flex min-w-0 items-start gap-3">
+											<span
+												className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-neutral-100 text-neutral-700 dark:bg-neutral-900 dark:text-neutral-200"
+												aria-hidden="true"
 											>
-												{DOCUMENT_OPTIONS.map((option) => (
-													<option
-														key={option.value}
-														value={option.value}
-														disabled={
-															option.required &&
-															selectedRequiredTypes.has(option.value)
-														}
+												<PaperClipIcon className="h-5 w-5" />
+											</span>
+											<div className="min-w-0">
+												<div className="flex flex-wrap items-center gap-2">
+													<p className="font-semibold text-neutral-950 dark:text-neutral-50">
+														{selectedOption.label}
+													</p>
+													<span
+														className={`rounded-full px-2 py-0.5 text-[11px] font-bold uppercase tracking-[0.1em] ${
+															selectedOption.required
+																? "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-200"
+																: "bg-neutral-100 text-neutral-600 dark:bg-neutral-900 dark:text-neutral-300"
+														}`}
 													>
-														{option.label}
-														{option.required ? " *" : ""}
-													</option>
-												))}
-											</select>
-										</label>
-										<label className="space-y-1.5">
-											<span className="text-xs font-bold uppercase tracking-[0.12em] text-neutral-500">
-												Attachment
-											</span>
-											<input
-												type="file"
-												name={inputName}
-												className={inputClass}
-												accept=".pdf,image/jpeg,image/png,image/webp"
-												required
-											/>
-											<FieldHint>
-												{selectedOption.required
-													? "Required for application review."
-													: "Optional supporting paperwork, notes, or verification."}
-											</FieldHint>
-										</label>
-										<div className="flex md:items-end">
-											<button
-												type="button"
-												onClick={() => handleRemoveDocument(document.id)}
-												className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3 text-sm font-bold text-red-700 transition-colors hover:bg-red-100 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-200 md:w-12"
-												aria-label={`Remove ${selectedOption.label}`}
-											>
-												<TrashIcon className="h-5 w-5" aria-hidden="true" />
-												<span className="md:sr-only">Remove</span>
-											</button>
+														{selectedOption.required ? "Required" : "Optional"}
+													</span>
+												</div>
+												<p className="mt-1 truncate text-sm text-neutral-600 dark:text-neutral-400">
+													{document.fileName}
+												</p>
+												<p className="mt-1 text-xs text-neutral-500 dark:text-neutral-500">
+													{formatFileSize(document.fileSize)}
+												</p>
+											</div>
 										</div>
+										<button
+											type="button"
+											onClick={() => handleRemoveDocument(document.id)}
+											className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-red-200 bg-red-50 text-red-700 transition-colors hover:bg-red-100 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-200"
+											aria-label={`Remove ${selectedOption.label}`}
+										>
+											<TrashIcon className="h-5 w-5" aria-hidden="true" />
+										</button>
 									</div>
 								);
 							})}
 						</div>
 					) : (
-						<div className="rounded-2xl border border-(--border-soft) bg-neutral-50 p-5 text-sm text-neutral-600 dark:bg-neutral-950/30 dark:text-neutral-400">
-							No documents added yet. Use Add Document to attach the required
-							files and any optional supporting documents.
+						<div className="flex flex-col items-center justify-center rounded-2xl border border-(--border-soft) bg-neutral-50 p-6 text-center dark:bg-neutral-950/30">
+							<DocumentPlusIcon
+								className="h-10 w-10 text-neutral-400"
+								aria-hidden="true"
+							/>
+							<p className="mt-3 text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+								No documents attached yet
+							</p>
+							<p className="mt-1 max-w-md text-sm text-neutral-600 dark:text-neutral-400">
+								Use Add Document to attach required verification files and any
+								optional supporting paperwork.
+							</p>
 						</div>
 					)}
-				</section>
 
+					<ScreenModal
+						open={documentModalOpen}
+						onClose={handleCloseDocumentModal}
+						closeLabel="Close document upload"
+						maxWidthClass="max-w-lg"
+					>
+						<div className="space-y-5 pt-8">
+							<div>
+								<p className="text-xs font-bold uppercase tracking-[0.14em] text-neutral-500">
+									Application Attachment
+								</p>
+								<h3 className="mt-2 font-syne text-2xl font-bold text-neutral-950 dark:text-neutral-50">
+									Add Document
+								</h3>
+								<p className="mt-2 text-sm text-neutral-600 dark:text-neutral-400">
+									Select the document type, attach the file, and it will be added
+									to your application packet.
+								</p>
+							</div>
+
+							<label className="space-y-1.5">
+								<span className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">
+									Document Type
+								</span>
+								<select
+									value={documentDraft.type}
+									onChange={(event) => {
+										setDocumentDraft({ type: event.target.value, file: null });
+										setDocumentDraftError("");
+									}}
+									className={inputClass}
+								>
+									{DOCUMENT_OPTIONS.map((option) => (
+										<option
+											key={option.value}
+											value={option.value}
+											disabled={
+												option.required && attachedRequiredTypes.has(option.value)
+											}
+										>
+											{option.label}
+											{option.required ? " *" : ""}
+										</option>
+									))}
+								</select>
+							</label>
+
+							<label className="space-y-1.5">
+								<span className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">
+									Attachment
+								</span>
+								<input
+									key={`${documentModalOpen}-${documentDraft.type}`}
+									type="file"
+									className={inputClass}
+									accept=".pdf,image/jpeg,image/png,image/webp"
+									onChange={(event) => {
+										setDocumentDraft((currentDraft) => ({
+											...currentDraft,
+											file: event.target.files?.[0] ?? null,
+										}));
+										setDocumentDraftError("");
+									}}
+								/>
+							</label>
+
+							{documentDraftError ? (
+								<p className="text-sm font-semibold text-red-600">
+									{documentDraftError}
+								</p>
+							) : null}
+
+							<div className="flex flex-col-reverse gap-3 pt-3 sm:flex-row sm:justify-end">
+								<button
+									type="button"
+									onClick={handleCloseDocumentModal}
+									className="rounded-xl border border-(--border-soft) px-4 py-2.5 text-sm font-bold text-neutral-700 transition hover:bg-neutral-100 dark:text-neutral-200 dark:hover:bg-neutral-900"
+								>
+									Cancel
+								</button>
+								<button
+									type="button"
+									onClick={handleAttachDocument}
+									className="inline-flex items-center justify-center gap-2 rounded-xl bg-neutral-950 px-4 py-2.5 text-sm font-bold text-neutral-50 transition hover:bg-neutral-800 dark:bg-neutral-50 dark:text-neutral-950 dark:hover:bg-neutral-200"
+								>
+									<PlusIcon className="h-5 w-5" aria-hidden="true" />
+									Attach Document
+								</button>
+							</div>
+						</div>
+					</ScreenModal>
+				</section>
 				<section className={sectionClass}>
 					<SectionTitle title="Personal References" />
 					<div className="grid grid-cols-1 gap-4">
