@@ -64,6 +64,38 @@ function getDocuSignSdk() {
 	return docusignSdk;
 }
 
+function getDocuSignOAuthErrorMessage(error) {
+	const data = error?.response?.data;
+	const errorCode = data?.error ? String(data.error) : "";
+	const description = data?.error_description ? String(data.error_description) : "";
+	const traceToken = error?.response?.headers?.["x-docusign-tracetoken"];
+
+	if (!errorCode && !description) return null;
+
+	const traceSuffix = traceToken ? ` DocuSign trace token: ${traceToken}.` : "";
+
+	if (errorCode === "invalid_grant" && description === "no_valid_keys_or_signatures") {
+		return (
+			"DocuSign rejected JWT authentication because the configured private key " +
+			"does not match a public key registered for DOCUSIGN_INTEGRATION_KEY. " +
+			"Regenerate the DocuSign RSA keypair for that integration, copy the private " +
+			"key into DOCUSIGN_PRIVATE_KEY, and confirm DOCUSIGN_AUTH_BASE_PATH matches " +
+			"the same sandbox/production app." +
+			traceSuffix
+		);
+	}
+
+	if (errorCode === "consent_required") {
+		return (
+			"DocuSign JWT consent is required for the configured user. Open the DocuSign " +
+			"JWT consent URL for DOCUSIGN_INTEGRATION_KEY and DOCUSIGN_USER_ID, then try again." +
+			traceSuffix
+		);
+	}
+
+	return `DocuSign OAuth failed: ${[errorCode, description].filter(Boolean).join(" - ")}.${traceSuffix}`;
+}
+
 function appUrl(path) {
 	const base = env.APP_BASE_URL.replace(/\/+$/, "");
 	return `${base}${path.startsWith("/") ? path : `/${path}`}`;
@@ -239,13 +271,20 @@ async function getDocuSignApiClient() {
 	const docusign = getDocuSignSdk();
 	const apiClient = new docusign.ApiClient();
 	apiClient.setOAuthBasePath(config.authBasePath.replace(/^https?:\/\//, ""));
-	const tokenResponse = await apiClient.requestJWTUserToken(
-		config.integrationKey,
-		config.userId,
-		DOCUSIGN_SCOPES,
-		Buffer.from(normalizePrivateKey(config.privateKey)),
-		3600
-	);
+	let tokenResponse;
+	try {
+		tokenResponse = await apiClient.requestJWTUserToken(
+			config.integrationKey,
+			config.userId,
+			DOCUSIGN_SCOPES,
+			Buffer.from(normalizePrivateKey(config.privateKey)),
+			3600
+		);
+	} catch (error) {
+		const message = getDocuSignOAuthErrorMessage(error);
+		if (message) throw new SigningOperationError(502, message);
+		throw error;
+	}
 	const accessToken = tokenResponse.body?.access_token;
 	const expiresIn = Number(tokenResponse.body?.expires_in || 3600);
 	if (!accessToken) {
