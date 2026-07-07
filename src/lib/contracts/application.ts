@@ -4,15 +4,6 @@ const phonePattern = /^\d{3}-\d{3}-\d{4}$/;
 const einPattern = /^\d{2}-\d{7}$/;
 const ssnPattern = /^\d{3}-\d{2}-\d{4}$/;
 const numericPattern = /^\d+$/;
-const isoDatePattern = /^\d{4}-\d{2}-\d{2}$/;
-const isoDateSchema = z
-	.string()
-	.trim()
-	.regex(isoDatePattern, "Use YYYY-MM-DD.")
-	.refine((value) => {
-		const date = new Date(`${value}T00:00:00.000Z`);
-		return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
-	}, "Enter a real calendar date.");
 
 export const requiredApplicationDocumentFields = [
 	"utilityBill1",
@@ -40,12 +31,12 @@ export const applicationDocumentTypes: Record<
 		category: "identity_support",
 	},
 	licenseFront: {
-		label: "Driver License (Front)",
+		label: "Driver's License (Front)",
 		documentType: "license_front",
 		category: "identity",
 	},
 	licenseBack: {
-		label: "Driver License (Back)",
+		label: "Driver's License (Back)",
 		documentType: "license_back",
 		category: "identity",
 	},
@@ -86,9 +77,7 @@ export const applicationSubmissionSchema = z
 			.min(4, "USDOT Number must be at least 4 digits.")
 			.max(9, "USDOT Number must be 9 digits or fewer.")
 			.regex(numericPattern, "USDOT Number must be numeric."),
-		requestedRentalStartDate: isoDateSchema,
-		requestedRentalEndDate: isoDateSchema,
-		rentalDuration: z.string().trim().min(1).max(160),
+		rentalDuration: z.string().trim().max(160).optional().default(""),
 		ref1Name: z.string().trim().max(80).optional().default(""),
 		ref1Phone: z
 			.string()
@@ -120,16 +109,7 @@ export const applicationSubmissionSchema = z
 		ssnAuth: z.boolean().refine(Boolean, "SSN authorization is required."),
 		insurance: z.boolean().refine(Boolean, "Insurance agreement is required."),
 		maintenance: z.boolean().refine(Boolean, "Maintenance agreement is required."),
-	})
-	.refine(
-		(value) =>
-			new Date(value.requestedRentalEndDate).getTime() >=
-			new Date(value.requestedRentalStartDate).getTime(),
-		{
-			path: ["requestedRentalEndDate"],
-			message: "Requested end date must be on or after the start date.",
-		}
-	);
+	});
 
 export type ApplicationSubmissionInput = z.infer<
 	typeof applicationSubmissionSchema

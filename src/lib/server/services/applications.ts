@@ -64,9 +64,14 @@ function normalizeDigits(value: string) {
 	return value.replace(/\D/g, "");
 }
 
-function buildRequestedRentalRangeSummary(startDate: string, endDate: string) {
-	if (!startDate || !endDate) return "";
-	return `${startDate} to ${endDate}`;
+function validateApplicationFile(file: File, label: string) {
+	if (file.size > MAX_FILE_SIZE_BYTES) {
+		throw new Error(`${label} must be under 5 MB.`);
+	}
+
+	if (file.type && !ALLOWED_FILE_TYPES.has(file.type)) {
+		throw new Error(`${label} must be a PDF, JPG, PNG, or WebP file.`);
+	}
 }
 
 function getRequiredFile(
@@ -78,19 +83,18 @@ function getRequiredFile(
 		throw new Error(`${applicationDocumentTypes[field].label} is required.`);
 	}
 
-	if (value.size > MAX_FILE_SIZE_BYTES) {
-		throw new Error(
-			`${applicationDocumentTypes[field].label} must be under 5 MB.`
-		);
-	}
-
-	if (value.type && !ALLOWED_FILE_TYPES.has(value.type)) {
-		throw new Error(
-			`${applicationDocumentTypes[field].label} must be a PDF, JPG, PNG, or WebP file.`
-		);
-	}
-
+	validateApplicationFile(value, applicationDocumentTypes[field].label);
 	return value;
+}
+
+function getAdditionalApplicationFiles(formData: FormData) {
+	return formData
+		.getAll("otherDocuments")
+		.filter((value): value is File => value instanceof File && Boolean(value.name))
+		.map((file) => {
+			validateApplicationFile(file, file.name || "Other supporting document");
+			return file;
+		});
 }
 
 export async function submitApplication(formData: FormData) {
@@ -113,12 +117,7 @@ export async function submitApplication(formData: FormData) {
 		ein: normalizeEin(stringValue(formData, "ein")),
 		mcNumber: normalizeDigits(stringValue(formData, "mcNumber")),
 		usdot: normalizeDigits(stringValue(formData, "usdot")),
-		requestedRentalStartDate: stringValue(formData, "requestedRentalStartDate"),
-		requestedRentalEndDate: stringValue(formData, "requestedRentalEndDate"),
-		rentalDuration: buildRequestedRentalRangeSummary(
-			stringValue(formData, "requestedRentalStartDate"),
-			stringValue(formData, "requestedRentalEndDate")
-		),
+		rentalDuration: "",
 		ref1Name: stringValue(formData, "ref1Name"),
 		ref1Phone: normalizePhone(stringValue(formData, "ref1Phone")),
 		ref2Name: stringValue(formData, "ref2Name"),
@@ -137,6 +136,7 @@ export async function submitApplication(formData: FormData) {
 			getRequiredFile(formData, field),
 		])
 	) as Record<RequiredApplicationDocumentField, File>;
+	const additionalFiles = getAdditionalApplicationFiles(formData);
 
 	const tenant = await createTenant({
 		displayName: payload.companyName,
@@ -176,6 +176,26 @@ export async function submitApplication(formData: FormData) {
 				contentType: files[field].type,
 				category: applicationDocumentTypes[field].category,
 				documentType: applicationDocumentTypes[field].documentType,
+			});
+		})
+	);
+
+	await Promise.all(
+		additionalFiles.map(async (file) => {
+			const storagePath = await uploadApplicationFile({
+				applicationId: application.id,
+				documentField: "other",
+				file,
+			});
+
+			return createApplicationDocument({
+				applicationId: application.id,
+				bucket: "application-documents",
+				storagePath,
+				fileName: file.name,
+				contentType: file.type,
+				category: "other",
+				documentType: "other",
 			});
 		})
 	);

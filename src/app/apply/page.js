@@ -1,14 +1,16 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { PlusIcon, TrashIcon } from "@heroicons/react/24/outline";
 import Card from "@/components/ui/Card";
 
-const REQUIRED_DOCS = [
-	{ name: "utilityBill1", label: "Utility Bill (1 of 2)" },
-	{ name: "utilityBill2", label: "Utility Bill (2 of 2)" },
-	{ name: "licenseFront", label: "Driver License (Front)" },
-	{ name: "licenseBack", label: "Driver License (Back)" },
-	{ name: "tractorPlate", label: "Tractor License Plate Photo" },
+const DOCUMENT_OPTIONS = [
+	{ value: "utilityBill1", label: "Utility Bill (1 of 2)", required: true },
+	{ value: "utilityBill2", label: "Utility Bill (2 of 2)", required: true },
+	{ value: "licenseFront", label: "Driver's License (Front)", required: true },
+	{ value: "licenseBack", label: "Driver's License (Back)", required: true },
+	{ value: "tractorPlate", label: "Tractor License Plate Photo", required: true },
+	{ value: "other", label: "Other Supporting Document", required: false },
 ];
 
 function LoadingSpinner() {
@@ -60,6 +62,32 @@ function FieldHint({ children }) {
 	);
 }
 
+function getDocumentOption(value) {
+	return (
+		DOCUMENT_OPTIONS.find((option) => option.value === value) ??
+		DOCUMENT_OPTIONS[0]
+	);
+}
+
+function getMissingRequiredDocuments(documents) {
+	const selectedRequiredTypes = new Set(
+		documents
+			.map((document) => document.type)
+			.filter((type) => getDocumentOption(type).required),
+	);
+
+	return DOCUMENT_OPTIONS.filter(
+		(option) => option.required && !selectedRequiredTypes.has(option.value),
+	);
+}
+
+function createDocumentRow(type) {
+	return {
+		id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+		type,
+	};
+}
+
 export default function Apply() {
 	return (
 		<div className="grid grid-flow-row w-full h-full gap-7 mt-25 p-5 md:px-12 lg:px-20 pb-12">
@@ -70,12 +98,6 @@ export default function Apply() {
 				<h1 className="font-syne text-3xl md:text-5xl lg:text-6xl font-bold mt-2">
 					Account Application
 				</h1>
-				<p className="mt-3 max-w-3xl text-neutral-700 dark:text-neutral-300 leading-relaxed">
-					Complete the form below to create your D1Trailers account and
-					securely submit verification documents. Once your account is created,
-					you can sign in immediately and create rental requests from the
-					portal.
-				</p>
 			</header>
 			<Form />
 		</div>
@@ -84,6 +106,7 @@ export default function Apply() {
 
 function Form() {
 	const formRef = useRef(null);
+	const [documents, setDocuments] = useState([]);
 	const [submitting, setSubmitting] = useState(false);
 	const [error, setError] = useState("");
 	const [success, setSuccess] = useState("");
@@ -92,6 +115,34 @@ function Form() {
 		"w-full p-3 rounded-lg border border-(--border-soft) bg-neutral-50 dark:bg-neutral-900/40 text-neutral-950 dark:text-neutral-50 focus:outline-none focus:ring-2 focus:ring-(--branding-700)";
 
 	const sectionClass = "surface-panel rounded-2xl p-5 md:p-6 space-y-4";
+	const missingRequiredDocuments = getMissingRequiredDocuments(documents);
+
+	function handleAddDocument() {
+		const nextType = missingRequiredDocuments[0]?.value ?? "other";
+		setDocuments((currentDocuments) => [
+			...currentDocuments,
+			createDocumentRow(nextType),
+		]);
+	}
+
+	function handleDocumentTypeChange(documentId, nextType) {
+		setDocuments((currentDocuments) =>
+			currentDocuments.map((document) =>
+				document.id === documentId
+					? {
+							...document,
+							type: nextType,
+						}
+					: document,
+			),
+		);
+	}
+
+	function handleRemoveDocument(documentId) {
+		setDocuments((currentDocuments) =>
+			currentDocuments.filter((document) => document.id !== documentId),
+		);
+	}
 
 	async function handleSubmit(event) {
 		event.preventDefault();
@@ -100,21 +151,18 @@ function Form() {
 		setSuccess("");
 
 		try {
-			const formData = new FormData(event.currentTarget);
-			const requestedStart = String(
-				formData.get("requestedRentalStartDate") ?? "",
-			);
-			const requestedEnd = String(formData.get("requestedRentalEndDate") ?? "");
-			if (
-				requestedStart &&
-				requestedEnd &&
-				new Date(requestedEnd).getTime() < new Date(requestedStart).getTime()
-			) {
-				setError("Requested rental end date must be on or after the start date.");
+			const missingDocuments = getMissingRequiredDocuments(documents);
+			if (missingDocuments.length) {
+				setError(
+					`Add the required documents before submitting: ${missingDocuments
+						.map((document) => document.label)
+						.join(", ")}.`,
+				);
 				setSubmitting(false);
 				return;
 			}
 
+			const formData = new FormData(event.currentTarget);
 			const response = await fetch("/api/applications", {
 				method: "POST",
 				body: formData,
@@ -132,6 +180,7 @@ function Form() {
 			}
 
 			formRef.current?.reset();
+			setDocuments([]);
 			setSuccess(
 				"Account application submitted. You can sign in with this email and create rental requests from your portal once your account access is claimed."
 			);
@@ -335,62 +384,139 @@ function Form() {
 							</FieldHint>
 						</label>
 					</div>
-					<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-						<label className="space-y-1.5">
-							<span className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">
-								Requested Start Date
-							</span>
-							<input
-								type="date"
-								name="requestedRentalStartDate"
-								className={inputClass}
-								required
-							/>
-							<FieldHint>
-								Use your best expected start date. You can revise exact rental
-								terms later from your portal.
-							</FieldHint>
-						</label>
-						<label className="space-y-1.5">
-							<span className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">
-								Requested End Date
-							</span>
-							<input
-								type="date"
-								name="requestedRentalEndDate"
-								className={inputClass}
-								required
-							/>
-							<FieldHint>
-								The requested return/end date for the initial rental window.
-							</FieldHint>
-						</label>
-					</div>
 				</section>
 
 				<section className={sectionClass}>
-					<SectionTitle title="Required Documents" />
-					<p className="text-xs text-neutral-600 dark:text-neutral-400">
-						Each attachment must be under 5 MB. Accepted formats: PDF, JPG,
-						PNG, and WebP.
-					</p>
-					<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-						{REQUIRED_DOCS.map((doc) => (
-							<label
-								key={doc.name}
-								className="flex flex-col gap-1 text-sm text-neutral-700 dark:text-neutral-300"
-							>
-								<span>{doc.label}</span>
-								<input
-									type="file"
-									name={doc.name}
-									className={inputClass}
-									accept=".pdf,image/jpeg,image/png,image/webp"
-									required
-								/>
-							</label>
-						))}
+					<div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+						<div>
+							<SectionTitle title="Required Documents" />
+							<p className="mt-2 text-xs text-neutral-600 dark:text-neutral-400">
+								Each attachment must be under 5 MB. Accepted formats: PDF, JPG,
+								PNG, and WebP.
+							</p>
+						</div>
+						<button
+							type="button"
+							onClick={handleAddDocument}
+							className="inline-flex items-center justify-center gap-2 rounded-xl bg-neutral-950 px-4 py-2.5 text-sm font-bold text-neutral-50 transition-colors hover:bg-neutral-800 dark:bg-neutral-50 dark:text-neutral-950 dark:hover:bg-neutral-200"
+						>
+							<PlusIcon className="h-5 w-5" aria-hidden="true" />
+							Add Document
+						</button>
 					</div>
+
+					<div className="rounded-2xl border border-dashed border-(--border-soft) bg-neutral-50/80 p-4 dark:bg-neutral-950/20">
+						<p className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+							Required checklist
+						</p>
+						<div className="mt-3 flex flex-wrap gap-2">
+							{DOCUMENT_OPTIONS.filter((option) => option.required).map(
+								(option) => {
+									const complete = !missingRequiredDocuments.some(
+										(document) => document.value === option.value,
+									);
+									return (
+										<span
+											key={option.value}
+											className={`rounded-full px-3 py-1 text-xs font-semibold ${
+												complete
+													? "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-200"
+													: "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-200"
+											}`}
+										>
+											{complete ? "Added" : "Needed"} · {option.label}
+										</span>
+									);
+								},
+							)}
+						</div>
+					</div>
+
+					{documents.length ? (
+						<div className="space-y-3">
+							{documents.map((document) => {
+								const selectedRequiredTypes = new Set(
+									documents
+										.filter((candidate) => candidate.id !== document.id)
+										.map((candidate) => candidate.type)
+										.filter((type) => getDocumentOption(type).required),
+								);
+								const selectedOption = getDocumentOption(document.type);
+								const inputName =
+									document.type === "other" ? "otherDocuments" : document.type;
+
+								return (
+									<div
+										key={document.id}
+										className="grid grid-cols-1 gap-3 rounded-2xl border border-(--border-soft) bg-white/80 p-4 dark:bg-neutral-950/30 md:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)_auto]"
+									>
+										<label className="space-y-1.5">
+											<span className="text-xs font-bold uppercase tracking-[0.12em] text-neutral-500">
+												Document Type
+											</span>
+											<select
+												value={document.type}
+												onChange={(event) =>
+													handleDocumentTypeChange(
+														document.id,
+														event.target.value,
+													)
+												}
+												className={inputClass}
+											>
+												{DOCUMENT_OPTIONS.map((option) => (
+													<option
+														key={option.value}
+														value={option.value}
+														disabled={
+															option.required &&
+															selectedRequiredTypes.has(option.value)
+														}
+													>
+														{option.label}
+														{option.required ? " *" : ""}
+													</option>
+												))}
+											</select>
+										</label>
+										<label className="space-y-1.5">
+											<span className="text-xs font-bold uppercase tracking-[0.12em] text-neutral-500">
+												Attachment
+											</span>
+											<input
+												type="file"
+												name={inputName}
+												className={inputClass}
+												accept=".pdf,image/jpeg,image/png,image/webp"
+												required
+											/>
+											<FieldHint>
+												{selectedOption.required
+													? "Required for application review."
+													: "Optional supporting paperwork, notes, or verification."}
+											</FieldHint>
+										</label>
+										<div className="flex md:items-end">
+											<button
+												type="button"
+												onClick={() => handleRemoveDocument(document.id)}
+												className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3 text-sm font-bold text-red-700 transition-colors hover:bg-red-100 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-200 md:w-12"
+												aria-label={`Remove ${selectedOption.label}`}
+											>
+												<TrashIcon className="h-5 w-5" aria-hidden="true" />
+												<span className="md:sr-only">Remove</span>
+											</button>
+										</div>
+									</div>
+								);
+							})}
+						</div>
+					) : (
+						<div className="rounded-2xl border border-(--border-soft) bg-neutral-50 p-5 text-sm text-neutral-600 dark:bg-neutral-950/30 dark:text-neutral-400">
+							No documents added yet. Use Add Document to attach the required
+							files and any optional supporting documents.
+						</div>
+					)}
 				</section>
 
 				<section className={sectionClass}>

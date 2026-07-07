@@ -46,7 +46,6 @@ const REQUIRED_TEXT_FIELDS = [
 	["ein", "Federal Tax ID (EIN)"],
 	["mcNumber", "MC Number"],
 	["usdot", "USDOT Number"],
-	["rentalDuration", "Duration of rental"],
 	["ssn", "SSN"],
 ];
 

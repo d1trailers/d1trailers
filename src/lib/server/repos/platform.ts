@@ -2,7 +2,6 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { randomUUID } from "crypto";
 import type {
 	ApplicationSubmissionInput,
-	RequiredApplicationDocumentField,
 } from "@/lib/contracts/application";
 import type {
 	TenantPermission,
@@ -729,7 +728,7 @@ export async function createRentalDocument(input: {
 
 export async function uploadApplicationFile(input: {
 	applicationId: string;
-	documentField: RequiredApplicationDocumentField;
+	documentField: string;
 	file: File;
 }) {
 	const buffer = Buffer.from(await input.file.arrayBuffer());
