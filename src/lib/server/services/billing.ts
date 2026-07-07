@@ -1,5 +1,6 @@
 import Stripe from "stripe";
 import { env, requireStripeSecretKey, requireStripeWebhookSecret } from "@/lib/server/env";
+import { formatTrailerType } from "@/lib/trailerTypes";
 import {
 	createStripeEvent,
 	getBillingAccountByTenantId,
@@ -104,12 +105,55 @@ function getBillingInterval(frequency: RentalRecord["billing_frequency"]) {
 	return "month";
 }
 
-function getRentalDisplayName(rental: RentalRecord) {
+function getRentalName(rental: RentalRecord) {
+	const trailerCounts = new Map<string, number>();
+	for (const assignment of rental.assignments ?? []) {
+		if (assignment.status !== "active") continue;
+		const trailerType = formatTrailerType(assignment.trailer?.trailer_type, "");
+		if (!trailerType) continue;
+		trailerCounts.set(trailerType, (trailerCounts.get(trailerType) ?? 0) + 1);
+	}
+
+	if (!trailerCounts.size) {
+		for (const requested of rental.requested_trailer_types ?? []) {
+			const requestedType = formatTrailerType(requested.trailer_type, "");
+			const requestedCount = Number(requested.quantity);
+			if (!requestedType) continue;
+			trailerCounts.set(
+				requestedType,
+				(trailerCounts.get(requestedType) ?? 0) +
+					(Number.isFinite(requestedCount) && requestedCount > 0
+					? Math.floor(requestedCount)
+					: 1)
+			);
+		}
+	}
+
+	if (!trailerCounts.size) {
+		const requestedType = formatTrailerType(rental.requested_trailer_type, "");
+		const requestedCount = Number(rental.requested_trailer_count);
+		if (requestedType) {
+			trailerCounts.set(
+				requestedType,
+				Number.isFinite(requestedCount) && requestedCount > 0
+					? Math.floor(requestedCount)
+					: 1
+			);
+		}
+	}
+
+	if (trailerCounts.size) {
+		return [...trailerCounts.entries()]
+			.map(([label, count]) => `${label} x ${count}`)
+			.join(", ");
+	}
+
+	return "Rental Agreement";
+}
+
+function getStripeRentalDisplayName(rental: RentalRecord) {
 	const tenantName = rental.tenant?.display_name || "D1 Trailers Customer";
-	const trailerSummary = rental.assignments?.length
-		? `${rental.assignments.length} trailer rental`
-		: rental.requested_trailer_type || "Trailer rental";
-	return `${tenantName} - ${trailerSummary}`;
+	return `${tenantName}::${getRentalName(rental)}`;
 }
 
 function getTenantEmail(rental: RentalRecord) {
@@ -226,7 +270,16 @@ async function ensureStripeCustomer(rental: RentalRecord) {
 }
 
 async function ensureRentalProductAndPrice(rental: RentalRecord) {
+	const productName = getStripeRentalDisplayName(rental);
 	if (rental.stripe_product_id && rental.stripe_price_id) {
+		await stripe().products.update(rental.stripe_product_id, {
+			name: productName,
+			metadata: {
+				tenantId: rental.tenant_id,
+				rentalId: rental.id,
+				rentalName: getRentalName(rental),
+			},
+		});
 		return {
 			productId: rental.stripe_product_id,
 			priceId: rental.stripe_price_id,
@@ -234,12 +287,20 @@ async function ensureRentalProductAndPrice(rental: RentalRecord) {
 	}
 
 	const product = rental.stripe_product_id
-		? await stripe().products.retrieve(rental.stripe_product_id)
-		: await stripe().products.create({
-				name: getRentalDisplayName(rental),
+		? await stripe().products.update(rental.stripe_product_id, {
+				name: productName,
 				metadata: {
 					tenantId: rental.tenant_id,
 					rentalId: rental.id,
+					rentalName: getRentalName(rental),
+				},
+			})
+		: await stripe().products.create({
+				name: productName,
+				metadata: {
+					tenantId: rental.tenant_id,
+					rentalId: rental.id,
+					rentalName: getRentalName(rental),
 				},
 			});
 
@@ -457,10 +518,11 @@ export async function activateRentalBilling(rentalId: string) {
 				currency: env.STRIPE_DEFAULT_CURRENCY,
 				unit_amount: depositAmount,
 				product_data: {
-					name: `${getRentalDisplayName(rental)} Deposit`,
+					name: `${getStripeRentalDisplayName(rental)} Deposit`,
 					metadata: {
 						tenantId: rental.tenant_id,
 						rentalId: rental.id,
+						rentalName: getRentalName(rental),
 						sourceType: "deposit",
 					},
 				},
@@ -555,6 +617,40 @@ export async function createPayNowLinkForRental(rentalId: string, tenantId?: str
 	}
 
 	return createBillingPortalSessionForTenant(rental.tenant_id);
+}
+
+export async function cancelRentalBillingSubscription(rentalId: string) {
+	const rental = await getRentalById(rentalId);
+	if (!rental) {
+		throw new BillingOperationError(404, "Rental not found.");
+	}
+
+	if (!rental.stripe_subscription_id) {
+		return {
+			cancelled: false,
+			message: "No Stripe subscription is attached to this rental.",
+		};
+	}
+
+	const currentSubscription = await stripe().subscriptions.retrieve(
+		rental.stripe_subscription_id
+	);
+	if (currentSubscription.status === "canceled") {
+		return {
+			cancelled: false,
+			message: "Stripe subscription was already cancelled.",
+		};
+	}
+
+	await stripe().subscriptions.cancel(rental.stripe_subscription_id, {
+		invoice_now: false,
+		prorate: false,
+	});
+
+	return {
+		cancelled: true,
+		message: "Stripe subscription cancelled.",
+	};
 }
 
 export async function createSurchargeInvoiceItem(input: {

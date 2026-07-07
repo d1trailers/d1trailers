@@ -2,8 +2,6 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import Card from "@/components/ui/Card";
 import LogoutButton from "@/components/auth/LogoutButton";
-import AccountSwitcher from "@/components/account/AccountSwitcher";
-import { buildAccountContextPayload } from "@/lib/server/services/accounts";
 import {
 	getCurrentUserContext,
 	isStaffContext,
@@ -32,7 +30,6 @@ export default async function UnauthorizedPage({ searchParams }) {
 
 	const params = await searchParams;
 	const scope = typeof params?.scope === "string" ? params.scope : "account_access";
-	const accountContext = buildAccountContextPayload(context);
 
 	return (
 		<div className="grid grid-flow-row w-full h-full gap-6 mt-25 p-5 md:px-12 lg:px-20 pb-12 motion-enter">
@@ -63,11 +60,6 @@ export default async function UnauthorizedPage({ searchParams }) {
 					</Link>
 				</div>
 			</Card>
-
-			<AccountSwitcher
-				memberships={accountContext.memberships}
-				activeTenantId={accountContext.activeTenantId}
-			/>
 		</div>
 	);
 }

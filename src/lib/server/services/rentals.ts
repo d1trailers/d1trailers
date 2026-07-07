@@ -16,6 +16,7 @@ import {
 	hasTenantPermission,
 	type UserContext,
 } from "@/lib/server/services/access";
+import { cancelRentalBillingSubscription } from "@/lib/server/services/billing";
 import {
 	createAssignment,
 	createRentalDocument,
@@ -28,15 +29,18 @@ import {
 	getTenantById,
 	getTrailerById,
 	listActiveAssignmentsByTrailerIds,
+	listAllTimelineItemsByTenantId,
 	listAdminRentals,
 	listCommunicationEventsByTenantId,
 	listRentalsByTenantId,
 	listTimelineItemsByTenantId,
 	listTrailers,
+	replaceRentalRequestedTrailerTypes,
 	updateAssignment,
 	updateRental,
 	updateTenantStatus,
 	updateTrailer,
+	upsertTimelineItemByKey,
 	uploadRentalFile,
 	type ApplicationRecord,
 	type AssignmentRecord,
@@ -60,6 +64,176 @@ function parseNumericValue(value: unknown) {
 	if (value === null || value === undefined || value === "") return null;
 	const numericValue = Number(value);
 	return Number.isFinite(numericValue) ? numericValue : null;
+}
+
+function areApprovedTermsLocked(rental: RentalRecord) {
+	return (
+		rental.record_kind === "agreement" ||
+		["awaiting_first_payment", "active", "past_due", "suspended"].includes(
+			rental.status
+		)
+	);
+}
+
+function normalizeRequestedTrailerTypeLines(
+	lines: RentalRecord["requested_trailer_types"] | undefined,
+	fallback?: {
+		requested_trailer_type?: string | null;
+		requested_trailer_count?: number | null;
+	}
+) {
+	const normalized = (lines ?? [])
+		.map((line, index) => ({
+			trailerType: line.trailer_type,
+			quantity: Number(line.quantity),
+			sortOrder: line.sort_order ?? (index + 1) * 10,
+		}))
+		.filter(
+			(line) =>
+				line.trailerType &&
+				Number.isFinite(line.quantity) &&
+				line.quantity > 0
+		);
+
+	if (normalized.length) {
+		return normalized;
+	}
+
+	if (fallback?.requested_trailer_type) {
+		return [
+			{
+				trailerType: fallback.requested_trailer_type,
+				quantity:
+					Number.isFinite(Number(fallback.requested_trailer_count)) &&
+					Number(fallback.requested_trailer_count) > 0
+						? Number(fallback.requested_trailer_count)
+						: 1,
+				sortOrder: 10,
+			},
+		];
+	}
+
+	return [];
+}
+
+function getPrimaryRequestedTrailerType(
+	lines: Array<{ trailerType: string; quantity: number }>
+) {
+	return lines[0] ?? null;
+}
+
+function areRequestedTrailerTypesDifferent(
+	left: Array<{ trailerType: string; quantity: number }>,
+	right: Array<{ trailerType: string; quantity: number }>
+) {
+	if (left.length !== right.length) return true;
+	return left.some((leftItem, index) => {
+		const rightItem = right[index];
+		return (
+			!rightItem ||
+			leftItem.trailerType !== rightItem.trailerType ||
+			leftItem.quantity !== rightItem.quantity
+		);
+	});
+}
+
+async function replaceRequestedTrailerTypesForRental(
+	rentalId: string,
+	requestedTrailerTypes: Array<{ trailerType: string; quantity: number }>
+) {
+	return replaceRentalRequestedTrailerTypes({
+		rentalId,
+		requestedTrailerTypes: requestedTrailerTypes.map((item, index) => ({
+			...item,
+			sortOrder: (index + 1) * 10,
+		})),
+	});
+}
+
+function hasPaidBillingActivity(rental: RentalRecord) {
+	return (rental.billing_invoices ?? []).some(
+		(invoice) =>
+			invoice.status === "paid" ||
+			Boolean(invoice.paid_at) ||
+			Number(invoice.amount_paid ?? 0) > 0
+	);
+}
+
+function hasBillingSensitiveTenantChange(
+	rental: RentalRecord,
+	input: ReturnType<typeof tenantRentalModificationSchema.parse>
+) {
+	const approvedTermsLocked = areApprovedTermsLocked(rental);
+	return (
+		(!approvedTermsLocked &&
+			input.billingFrequency &&
+			input.billingFrequency !== rental.billing_frequency) ||
+		(!approvedTermsLocked &&
+			input.contractStartDate !== null &&
+			input.contractStartDate !== rental.contract_start_date) ||
+		(input.operationalStartDate !== null &&
+			input.operationalStartDate !== rental.operational_start_date) ||
+		(input.endDate !== null && input.endDate !== rental.end_date) ||
+		areRequestedTrailerTypesDifferent(
+			normalizeRequestedTrailerTypeLines(rental.requested_trailer_types, rental),
+			input.requestedTrailerTypes
+		)
+	);
+}
+
+async function flagBillingCreditReviewIfNeeded(input: {
+	rental: RentalRecord;
+	userId: string;
+	changes: ReturnType<typeof tenantRentalModificationSchema.parse>;
+}) {
+	if (
+		input.rental.record_kind !== "agreement" ||
+		!hasPaidBillingActivity(input.rental) ||
+		!hasBillingSensitiveTenantChange(input.rental, input.changes)
+	) {
+		return;
+	}
+
+	await upsertTimelineItemByKey({
+		tenantId: input.rental.tenant_id,
+		rentalId: input.rental.id,
+		itemKey: "billing_credit_review",
+		type: "action_required",
+		stage: "current",
+		sortOrder: 35,
+		title: "Review billing credit",
+		description:
+			"This paid rental has customer-requested changes that may affect billing. Review existing payments and credit applicable amounts toward the revised rental term before final approval.",
+		visibleToTenant: false,
+		metadata: {
+			source: "tenant_change_request",
+			changedAt: new Date().toISOString(),
+			changedByProfileId: input.userId,
+			previous: {
+				billingFrequency: input.rental.billing_frequency,
+				contractStartDate: input.rental.contract_start_date,
+				operationalStartDate: input.rental.operational_start_date,
+				endDate: input.rental.end_date,
+				requestedTrailerTypes: normalizeRequestedTrailerTypeLines(
+					input.rental.requested_trailer_types,
+					input.rental
+				),
+			},
+			requested: {
+				billingFrequency:
+					input.changes.billingFrequency ?? input.rental.billing_frequency,
+				contractStartDate:
+					input.changes.contractStartDate ?? input.rental.contract_start_date,
+				operationalStartDate:
+					input.changes.operationalStartDate ??
+					input.rental.operational_start_date,
+				endDate: input.changes.endDate ?? input.rental.end_date,
+				requestedTrailerTypes: input.changes.requestedTrailerTypes,
+			},
+		},
+		createdByProfileId: input.userId,
+		updatedByProfileId: input.userId,
+	});
 }
 
 function formatTenantName(rental: RentalRecord) {
@@ -234,6 +408,12 @@ export function mapRental(rental: RentalRecord) {
 	const assignments = Array.isArray(rental.assignments)
 		? rental.assignments.map(mapAssignment)
 		: [];
+	const requestedTrailerTypes = normalizeRequestedTrailerTypeLines(
+		rental.requested_trailer_types,
+		rental
+	);
+	const primaryRequestedTrailerType =
+		getPrimaryRequestedTrailerType(requestedTrailerTypes);
 	return {
 		id: rental.id,
 		tenantId: rental.tenant_id,
@@ -249,8 +429,11 @@ export function mapRental(rental: RentalRecord) {
 		endDate: rental.end_date,
 		recordKind: rental.record_kind,
 		requestKind: rental.request_kind,
-		requestedTrailerCount: rental.requested_trailer_count,
-		requestedTrailerType: rental.requested_trailer_type,
+		requestedTrailerTypes,
+		requestedTrailerCount:
+			primaryRequestedTrailerType?.quantity ?? rental.requested_trailer_count,
+		requestedTrailerType:
+			primaryRequestedTrailerType?.trailerType ?? rental.requested_trailer_type,
 		requestSummary: rental.request_summary,
 		requestedByProfileId: rental.requested_by_profile_id,
 		parentRentalId: rental.parent_rental_id,
@@ -652,6 +835,9 @@ export async function createAccountRentalRequest(context: UserContext, rawInput:
 		}
 	}
 
+	const primaryRequestedTrailerType = getPrimaryRequestedTrailerType(
+		input.requestedTrailerTypes
+	);
 	const rental = await createRental({
 		tenantId: membership.tenant_id,
 		recordKind: "request",
@@ -661,16 +847,20 @@ export async function createAccountRentalRequest(context: UserContext, rawInput:
 		billingStatus: "draft",
 		billingFrequency: input.billingFrequency,
 		contractStartDate: input.contractStartDate,
+		operationalStartDate: input.operationalStartDate,
 		endDate: input.endDate,
-		requestedTrailerCount: input.requestedTrailerCount,
-		requestedTrailerType: input.requestedTrailerType,
+		requestedTrailerCount: primaryRequestedTrailerType?.quantity ?? null,
+		requestedTrailerType: primaryRequestedTrailerType?.trailerType ?? null,
 		requestSummary: input.requestSummary,
 		requestedByProfileId: context.userId,
 	});
 
+	await replaceRequestedTrailerTypesForRental(rental.id, input.requestedTrailerTypes);
+	const refreshedRental = await getRentalById(rental.id);
+
 	await syncTenantStatusFromRentals(membership.tenant_id);
 
-	return mapRental(rental);
+	return mapRental(refreshedRental ?? rental);
 }
 
 export async function submitAccountRentalModification(
@@ -697,8 +887,17 @@ export async function submitAccountRentalModification(
 			? rawInput.action
 			: "save_changes";
 	const input = tenantRentalModificationSchema.parse(rawInput);
-	const requestedTrailerType = input.requestedTrailerType?.trim() || null;
+	const primaryRequestedTrailerType = getPrimaryRequestedTrailerType(
+		input.requestedTrailerTypes
+	);
 	const requestSummary = input.requestSummary?.trim() || null;
+	const approvedTermsLocked = areApprovedTermsLocked(rental);
+	const nextBillingFrequency = approvedTermsLocked
+		? rental.billing_frequency
+		: input.billingFrequency ?? rental.billing_frequency;
+	const nextContractStartDate = approvedTermsLocked
+		? rental.contract_start_date
+		: input.contractStartDate ?? rental.contract_start_date;
 
 	if (action === "approve_draft") {
 		if (rental.status !== "customer_review") {
@@ -717,15 +916,17 @@ export async function submitAccountRentalModification(
 						resolvedAt: new Date().toISOString(),
 						status: "awaiting_first_payment",
 						billingStatus: "awaiting_first_payment",
-						billingFrequency: input.billingFrequency ?? rental.billing_frequency,
-						contractStartDate: input.contractStartDate ?? rental.contract_start_date,
+						billingFrequency: nextBillingFrequency,
+						contractStartDate: nextContractStartDate,
+						operationalStartDate:
+							input.operationalStartDate ?? rental.operational_start_date,
 						endDate: input.endDate ?? rental.end_date,
 						requestedTrailerCount:
-							typeof input.requestedTrailerCount === "number"
-								? input.requestedTrailerCount
-								: rental.requested_trailer_count,
+							primaryRequestedTrailerType?.quantity ??
+							rental.requested_trailer_count,
 						requestedTrailerType:
-							requestedTrailerType ?? rental.requested_trailer_type,
+							primaryRequestedTrailerType?.trailerType ??
+							rental.requested_trailer_type,
 						requestSummary: requestSummary ?? rental.request_summary,
 				  })
 				: await updateRental({
@@ -738,20 +939,27 @@ export async function submitAccountRentalModification(
 							rental.status
 						),
 						billingStatus: rental.billing_status,
-						billingFrequency: input.billingFrequency ?? rental.billing_frequency,
-						contractStartDate: input.contractStartDate ?? rental.contract_start_date,
+						billingFrequency: nextBillingFrequency,
+						contractStartDate: nextContractStartDate,
+						operationalStartDate:
+							input.operationalStartDate ?? rental.operational_start_date,
 						endDate: input.endDate ?? rental.end_date,
 						requestedTrailerCount:
-							typeof input.requestedTrailerCount === "number"
-								? input.requestedTrailerCount
-								: rental.requested_trailer_count,
+							primaryRequestedTrailerType?.quantity ??
+							rental.requested_trailer_count,
 						requestedTrailerType:
-							requestedTrailerType ?? rental.requested_trailer_type,
+							primaryRequestedTrailerType?.trailerType ??
+							rental.requested_trailer_type,
 						requestSummary: requestSummary ?? rental.request_summary,
 				  });
 
+		await replaceRequestedTrailerTypesForRental(
+			approvedRental.id,
+			input.requestedTrailerTypes
+		);
 		await syncTenantStatusFromRentals(approvedRental.tenant_id);
-		return mapRental(approvedRental);
+		const refreshedApprovedRental = await getRentalById(approvedRental.id);
+		return mapRental(refreshedApprovedRental ?? approvedRental);
 	}
 
 	if (action === "decline_draft") {
@@ -778,6 +986,10 @@ export async function submitAccountRentalModification(
 	}
 
 	if (action === "cancel_rental") {
+		if (rental.stripe_subscription_id) {
+			await cancelRentalBillingSubscription(rental.id);
+		}
+
 		await releaseActiveAssignments(rental);
 
 		const cancelledRental = await updateRental({
@@ -795,6 +1007,12 @@ export async function submitAccountRentalModification(
 		return mapRental(cancelledRental);
 	}
 
+	await flagBillingCreditReviewIfNeeded({
+		rental,
+		userId: context.userId,
+		changes: input,
+	});
+
 	const updatedRental = await updateRental({
 		rentalId: rental.id,
 		recordKind: rental.record_kind,
@@ -802,20 +1020,26 @@ export async function submitAccountRentalModification(
 		resolvedAt: rental.record_kind === "request" ? null : rental.resolved_at,
 		status: "changes_pending",
 		billingStatus: rental.billing_status,
-		billingFrequency: input.billingFrequency ?? rental.billing_frequency,
-		contractStartDate: input.contractStartDate ?? rental.contract_start_date,
+		billingFrequency: nextBillingFrequency,
+		contractStartDate: nextContractStartDate,
+		operationalStartDate:
+			input.operationalStartDate ?? rental.operational_start_date,
 		endDate: input.endDate ?? rental.end_date,
 		requestedTrailerCount:
-			typeof input.requestedTrailerCount === "number"
-				? input.requestedTrailerCount
-				: rental.requested_trailer_count,
-		requestedTrailerType: requestedTrailerType ?? rental.requested_trailer_type,
+			primaryRequestedTrailerType?.quantity ?? rental.requested_trailer_count,
+		requestedTrailerType:
+			primaryRequestedTrailerType?.trailerType ?? rental.requested_trailer_type,
 		requestSummary: requestSummary ?? rental.request_summary,
 		requestedByProfileId: context.userId,
 	});
 
+	await replaceRequestedTrailerTypesForRental(
+		updatedRental.id,
+		input.requestedTrailerTypes
+	);
 	await syncTenantStatusFromRentals(updatedRental.tenant_id);
-	return mapRental(updatedRental);
+	const refreshedUpdatedRental = await getRentalById(updatedRental.id);
+	return mapRental(refreshedUpdatedRental ?? updatedRental);
 }
 
 const MAX_RENTAL_DOCUMENT_SIZE_BYTES = 5 * 1024 * 1024;
@@ -993,7 +1217,7 @@ export async function getAdminRentalDetail(rentalId: string) {
 	const [trailers, tenantRentals, timelineItems, communications] = await Promise.all([
 		listTrailers(),
 		listRentalsByTenantId(rental.tenant_id),
-		listTimelineItemsByTenantId(rental.tenant_id),
+		listAllTimelineItemsByTenantId(rental.tenant_id),
 		listCommunicationEventsByTenantId(rental.tenant_id),
 	]);
 	const availableTrailers = trailers.filter((trailer) => trailer.status === "available");
@@ -1024,6 +1248,9 @@ export async function createAdminRentalRecord(rawInput: unknown) {
 		["draft", "customer_review", "changes_pending"].includes(input.status)
 			? "request"
 			: "agreement";
+	const primaryRequestedTrailerType = getPrimaryRequestedTrailerType(
+		input.requestedTrailerTypes
+	);
 
 	const rental = await createRental({
 		tenantId: input.tenantId,
@@ -1038,9 +1265,14 @@ export async function createAdminRentalRecord(rawInput: unknown) {
 		operationalStartDate: input.operationalStartDate,
 		endDate: input.endDate,
 		requestSummary: input.requestSummary || null,
-		requestedTrailerCount: input.requestedTrailerCount ?? null,
-		requestedTrailerType: input.requestedTrailerType || null,
+		requestedTrailerCount: primaryRequestedTrailerType?.quantity ?? null,
+		requestedTrailerType: primaryRequestedTrailerType?.trailerType ?? null,
 	});
+
+	await replaceRequestedTrailerTypesForRental(
+		rental.id,
+		input.requestedTrailerTypes
+	);
 
 	await attachTrailersToRental({
 		rental,
@@ -1079,6 +1311,10 @@ async function resolveRentalRequest(
 		action === "deny_request" ? "declined" : "cancelled";
 	const nextBillingStatus: BillingStatus = "cancelled";
 
+	if (rental.stripe_subscription_id) {
+		await cancelRentalBillingSubscription(rental.id);
+	}
+
 	await releaseActiveAssignments(rental);
 
 	const resolvedRental = await updateRental({
@@ -1105,6 +1341,7 @@ async function sendRentalProposal(
 		throw new RentalOperationError(409, "This rental request is no longer pending.");
 	}
 
+	const approvedTermsLocked = areApprovedTermsLocked(rental);
 	const updatedRental = await updateRental({
 		rentalId: rental.id,
 		tenantId: await resolveAdminRentalTenantId(rental, input.tenantId),
@@ -1114,13 +1351,17 @@ async function sendRentalProposal(
 		status: "customer_review",
 		billingStatus:
 			rental.record_kind === "agreement" ? rental.billing_status : "draft",
-		billingFrequency: input.billingFrequency ?? rental.billing_frequency,
+		billingFrequency: approvedTermsLocked
+			? rental.billing_frequency
+			: input.billingFrequency ?? rental.billing_frequency,
 		rate: "rate" in input ? input.rate : parseNumericValue(rental.rate),
 		depositAmount:
 			"depositAmount" in input
 				? input.depositAmount
 				: parseNumericValue(rental.deposit_amount),
-		contractStartDate: input.contractStartDate ?? rental.contract_start_date,
+		contractStartDate: approvedTermsLocked
+			? rental.contract_start_date
+			: input.contractStartDate ?? rental.contract_start_date,
 		operationalStartDate:
 			input.operationalStartDate ?? rental.operational_start_date,
 		endDate: input.endDate ?? rental.end_date,
@@ -1128,14 +1369,6 @@ async function sendRentalProposal(
 			typeof input.requestSummary === "string"
 				? input.requestSummary
 				: rental.request_summary,
-		requestedTrailerCount:
-			typeof input.requestedTrailerCount === "number"
-				? input.requestedTrailerCount
-				: rental.requested_trailer_count,
-		requestedTrailerType:
-			typeof input.requestedTrailerType === "string"
-				? input.requestedTrailerType
-				: rental.requested_trailer_type,
 	});
 
 	await attachTrailersToRental({
@@ -1179,19 +1412,34 @@ export async function updateAdminRentalRecord(rentalId: string, rawInput: unknow
 	}
 
 	const nextTenantId = await resolveAdminRentalTenantId(rental, input.tenantId);
+	const approvedTermsLocked = areApprovedTermsLocked(rental);
+	const nextStatus = input.status ?? rental.status;
+	const nextBillingStatus = input.billingStatus ?? rental.billing_status;
+
+	if (
+		rental.stripe_subscription_id &&
+		(rental.status !== "cancelled" || rental.billing_status !== "cancelled") &&
+		(nextStatus === "cancelled" || nextBillingStatus === "cancelled")
+	) {
+		await cancelRentalBillingSubscription(rental.id);
+	}
 
 	const updatedRental = await updateRental({
 		rentalId: rental.id,
 		tenantId: nextTenantId,
-		status: input.status ?? rental.status,
-		billingStatus: input.billingStatus ?? rental.billing_status,
-		billingFrequency: input.billingFrequency ?? rental.billing_frequency,
+		status: nextStatus,
+		billingStatus: nextBillingStatus,
+		billingFrequency: approvedTermsLocked
+			? rental.billing_frequency
+			: input.billingFrequency ?? rental.billing_frequency,
 		rate: "rate" in input ? input.rate : parseNumericValue(rental.rate),
 		depositAmount:
 			"depositAmount" in input
 				? input.depositAmount
 				: parseNumericValue(rental.deposit_amount),
-		contractStartDate: input.contractStartDate ?? rental.contract_start_date,
+		contractStartDate: approvedTermsLocked
+			? rental.contract_start_date
+			: input.contractStartDate ?? rental.contract_start_date,
 		operationalStartDate:
 			input.operationalStartDate ?? rental.operational_start_date,
 		endDate: input.endDate ?? rental.end_date,
@@ -1199,14 +1447,6 @@ export async function updateAdminRentalRecord(rentalId: string, rawInput: unknow
 			typeof input.requestSummary === "string"
 				? input.requestSummary
 				: rental.request_summary,
-		requestedTrailerCount:
-			typeof input.requestedTrailerCount === "number"
-				? input.requestedTrailerCount
-				: rental.requested_trailer_count,
-		requestedTrailerType:
-			typeof input.requestedTrailerType === "string"
-				? input.requestedTrailerType
-				: rental.requested_trailer_type,
 	});
 
 	await attachTrailersToRental({

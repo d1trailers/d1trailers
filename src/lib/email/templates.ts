@@ -39,23 +39,23 @@ export function buildApplicationReceivedEmail(input: {
 	firstName: string;
 	companyName: string;
 }) {
-	const subject = "Your D1Trailers application was received";
+	const subject = "Your D1Trailers account has been created";
 	const html = wrapHtml(`
 		<p>Hi ${input.firstName},</p>
-		<p>We received your rental application${
+		<p>We created your D1Trailers account${
 			input.companyName ? ` for ${input.companyName}` : ""
 		}.</p>
-		<p>Our team will review the submission and contact you if anything else is needed. Most application reviews are completed within 48 hours.</p>
-		<p>We'll keep you updated as the application moves forward.</p>
+		<p>You can sign in with this email address to access your portal. From there, you can create rental requests and track updates from our team.</p>
+		<p>Our team will review your submitted account details and documents. If anything else is needed, we'll follow up directly.</p>
 	`);
 	const text = [
 		`Hi ${input.firstName},`,
 		"",
-		`We received your rental application${
+		`We created your D1Trailers account${
 			input.companyName ? ` for ${input.companyName}` : ""
 		}.`,
-		"Our team will review the submission and contact you if anything else is needed. Most application reviews are completed within 48 hours.",
-		"We'll keep you updated as the application moves forward.",
+		"You can sign in with this email address to access your portal. From there, you can create rental requests and track updates from our team.",
+		"Our team will review your submitted account details and documents. If anything else is needed, we'll follow up directly.",
 		"",
 		"D1Trailers",
 	].join("\n");

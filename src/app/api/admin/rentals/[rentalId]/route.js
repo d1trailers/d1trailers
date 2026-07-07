@@ -1,4 +1,5 @@
 import { requireAdminApiSession } from "@/lib/adminApi";
+import { BillingOperationError } from "@/lib/server/services/billing";
 import {
 	deleteAdminRentalRecord,
 	getAdminRentalDetail,
@@ -46,6 +47,10 @@ export async function PATCH(request, { params }) {
 		const rental = await updateAdminRentalRecord(rentalId, body);
 		return Response.json({ rental }, { status: 200 });
 	} catch (error) {
+		if (error instanceof BillingOperationError) {
+			return Response.json({ error: error.message }, { status: error.status });
+		}
+
 		if (error instanceof RentalOperationError) {
 			return Response.json({ error: error.message }, { status: error.status });
 		}

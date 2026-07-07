@@ -16,6 +16,7 @@ import {
 	formatRentalLabel,
 	RentalMetricTile,
 } from "@/components/rentals/RentalDetailShared";
+import { buildRentalTrailerTypeSummary } from "@/lib/trailerTypes";
 
 function TimelineList({ title, items, emptyMessage, emphasize = false }) {
 	return (
@@ -164,6 +165,12 @@ export function RentalCommunicationsCard({
 }
 
 export function RentalSnapshotCard({ rental }) {
+	const requestedTrailerSummary = buildRentalTrailerTypeSummary({
+		requestedTrailerTypes: rental?.requestedTrailerTypes,
+		requestedTrailerType: rental?.requestedTrailerType,
+		requestedTrailerCount: rental?.requestedTrailerCount,
+	});
+
 	return (
 		<Card>
 			<div className="space-y-3">
@@ -175,15 +182,13 @@ export function RentalSnapshotCard({ rental }) {
 				</div>
 				<div className="space-y-3 text-sm text-neutral-600 dark:text-neutral-400">
 					<p>
-						Requested trailer type:{" "}
+						Requested trailers:{" "}
 						<span className="font-medium text-neutral-900 dark:text-neutral-100">
-							{rental.requestedTrailerType || "-"}
-						</span>
-					</p>
-					<p>
-						Requested trailer count:{" "}
-						<span className="font-medium text-neutral-900 dark:text-neutral-100">
-							{rental.requestedTrailerCount || "-"}
+							{requestedTrailerSummary.length
+								? requestedTrailerSummary
+										.map((item) => `${item.label} x ${item.count}`)
+										.join(", ")
+								: "-"}
 						</span>
 					</p>
 					<p>

@@ -6,11 +6,17 @@ import Card from "@/components/ui/Card";
 import ScreenModal from "@/components/ui/ScreenModal";
 import ActionButton from "@/components/ui/ActionButton";
 import StatusBadge from "@/components/admin/StatusBadge";
+import {
+	TRAILER_TYPE_OPTIONS,
+	buildRentalTrailerTypeSummary,
+	getTrailerTypeFormValue,
+} from "@/lib/trailerTypes";
+import { prettifyEnumLabel } from "@/lib/displayLabels";
 
 function emptyForm() {
 	return {
 		trailerCode: "",
-		trailerType: "",
+		trailerType: "flatbed",
 		plateNumber: "",
 		vin: "",
 		status: "available",
@@ -54,7 +60,7 @@ export default function TrailerManagementModal({
 		const frame = window.requestAnimationFrame(() => {
 			setForm({
 				trailerCode: trailer.trailerCode || "",
-				trailerType: trailer.trailerType || "",
+				trailerType: getTrailerTypeFormValue(trailer.trailerType) || "flatbed",
 				plateNumber: trailer.plateNumber || "",
 				vin: trailer.vin || "",
 				status: trailer.status || "available",
@@ -70,12 +76,16 @@ export default function TrailerManagementModal({
 
 		return [
 			rental.tenantName,
-			rental.requestedTrailerType,
+			...buildRentalTrailerTypeSummary(rental).map((item) => item.label),
 			rental.contractStartDate,
 			rental.status,
 		]
 			.filter(Boolean)
 			.some((value) => String(value).toLowerCase().includes(query));
+	});
+	const visibleAssignments = (trailer?.assignments ?? []).filter((assignment) => {
+		const status = String(assignment.status || "").toLowerCase();
+		return status !== "cancelled" && status !== "canceled";
 	});
 
 	return (
@@ -144,8 +154,7 @@ export default function TrailerManagementModal({
 										</label>
 										<label className="grid gap-2 text-sm font-medium text-neutral-700 dark:text-neutral-300">
 											Trailer Type
-											<input
-												type="text"
+											<select
 												value={form.trailerType}
 												onChange={(event) =>
 													setForm((current) => ({
@@ -154,7 +163,13 @@ export default function TrailerManagementModal({
 													}))
 												}
 												className="w-full rounded-xl border border-(--border-soft) bg-white px-4 py-3 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-(--branding-700) dark:bg-neutral-950/50 dark:text-neutral-100"
-											/>
+											>
+												{TRAILER_TYPE_OPTIONS.map((option) => (
+													<option key={option.value} value={option.value}>
+														{option.label}
+													</option>
+												))}
+											</select>
 										</label>
 									</div>
 
@@ -214,7 +229,7 @@ export default function TrailerManagementModal({
 							<Card>
 								<div className="space-y-3">
 									<h3 className="font-syne text-2xl font-bold text-neutral-950 dark:text-neutral-50">
-										{mode === "create" ? "Assign to a Rental" : "Active Assignments"}
+										{mode === "create" ? "Assign to a Rental" : "Assignments"}
 									</h3>
 									{mode === "create" ? (
 										<>
@@ -275,7 +290,9 @@ export default function TrailerManagementModal({
 																	{rentalOption.tenantName || "Unknown tenant"}
 																</p>
 																<p className="text-neutral-600 dark:text-neutral-400">
-																	{rentalOption.requestedTrailerType || "Rental agreement"} | {rentalOption.status}
+																	{buildRentalTrailerTypeSummary(rentalOption)
+																		.map((item) => `${item.label} x ${item.count}`)
+																		.join(", ") || "Rental agreement"} | {prettifyEnumLabel(rentalOption.status)}
 																</p>
 																<p className="text-xs text-neutral-500 dark:text-neutral-400">
 																	{rentalOption.contractStartDate
@@ -292,9 +309,9 @@ export default function TrailerManagementModal({
 												</p>
 											)}
 										</>
-									) : trailer?.assignments?.length ? (
+									) : visibleAssignments.length ? (
 										<div className="space-y-3">
-											{trailer.assignments.map((assignment) => (
+											{visibleAssignments.map((assignment) => (
 												<div key={assignment.id} className="surface-subtle rounded-2xl p-4">
 													<div className="flex flex-wrap items-start justify-between gap-3">
 														<div>

@@ -10,6 +10,7 @@ import Card from "@/components/ui/Card";
 import ActionButton from "@/components/ui/ActionButton";
 import StatusBadge from "@/components/admin/StatusBadge";
 import TrailerManagementModal from "@/components/admin/TrailerManagementModal";
+import { formatTrailerType } from "@/lib/trailerTypes";
 
 const GROUP_LABELS = {
 	available: "Available",
@@ -287,7 +288,7 @@ export default function TrailerOperationsWorkspace() {
 																	trailer.id}
 															</p>
 															<p className="text-sm text-neutral-600 dark:text-neutral-400">
-																{trailer.trailerType || "Trailer"}
+																{formatTrailerType(trailer.trailerType)}
 															</p>
 															<p className="mt-2 text-xs text-neutral-500 dark:text-neutral-400">
 																{trailer.activeAssignmentCount} active

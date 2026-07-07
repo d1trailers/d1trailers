@@ -307,5 +307,6 @@ export async function getUserContextByIdentity(input: {
 
 export function resolvePostLoginDestination(context: UserContext) {
 	if (isStaffContext(context)) return "/admin";
+	if (context.tenantMemberships.length > 1) return "/account/select";
 	return resolveTenantDestination(context.activeTenantMembership);
 }

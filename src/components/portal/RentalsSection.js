@@ -24,6 +24,7 @@ export default function RentalsSection({
 	groupedRecords = {},
 	getPendingBadge = null,
 	loadingMessage = "Loading rentals...",
+	showTrailerTypeSummary = false,
 }) {
 	return (
 		<div className="space-y-4">
@@ -65,6 +66,7 @@ export default function RentalsSection({
 												pendingBadge={
 													getPendingBadge ? getPendingBadge(record) : null
 												}
+												showTrailerTypeSummary={showTrailerTypeSummary}
 											/>
 										))
 									) : (
@@ -86,6 +88,7 @@ export default function RentalsSection({
 							onClick={onOpenRecord}
 							showTenantName={showTenantName}
 							pendingBadge={getPendingBadge ? getPendingBadge(record) : null}
+							showTrailerTypeSummary={showTrailerTypeSummary}
 						/>
 					))}
 				</div>

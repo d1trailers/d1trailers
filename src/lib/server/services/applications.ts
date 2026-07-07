@@ -20,9 +20,6 @@ import {
 import { ensureOwnerInvitationForTenant } from "@/lib/server/services/accounts";
 import { sendTransactionalEmail } from "@/lib/server/services/communications";
 import type { UserContext } from "@/lib/server/services/access";
-import {
-	syncRentalAfterApplicationSubmission,
-} from "@/lib/server/services/rentals";
 import { syncJourneyAfterApplicationSubmission } from "@/lib/server/services/journey";
 
 const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
@@ -65,6 +62,11 @@ function normalizeSsn(value: string) {
 
 function normalizeDigits(value: string) {
 	return value.replace(/\D/g, "");
+}
+
+function buildRequestedRentalRangeSummary(startDate: string, endDate: string) {
+	if (!startDate || !endDate) return "";
+	return `${startDate} to ${endDate}`;
 }
 
 function getRequiredFile(
@@ -111,7 +113,12 @@ export async function submitApplication(formData: FormData) {
 		ein: normalizeEin(stringValue(formData, "ein")),
 		mcNumber: normalizeDigits(stringValue(formData, "mcNumber")),
 		usdot: normalizeDigits(stringValue(formData, "usdot")),
-		rentalDuration: stringValue(formData, "rentalDuration"),
+		requestedRentalStartDate: stringValue(formData, "requestedRentalStartDate"),
+		requestedRentalEndDate: stringValue(formData, "requestedRentalEndDate"),
+		rentalDuration: buildRequestedRentalRangeSummary(
+			stringValue(formData, "requestedRentalStartDate"),
+			stringValue(formData, "requestedRentalEndDate")
+		),
 		ref1Name: stringValue(formData, "ref1Name"),
 		ref1Phone: normalizePhone(stringValue(formData, "ref1Phone")),
 		ref2Name: stringValue(formData, "ref2Name"),
@@ -149,16 +156,8 @@ export async function submitApplication(formData: FormData) {
 		payload,
 	});
 
-	const initialRental = await syncRentalAfterApplicationSubmission({
-		tenantId: tenant.id,
-		applicationId: application.id,
-		billingFrequency: application.billing_frequency,
-		rentalDuration: application.rental_duration,
-	});
-
 	await syncJourneyAfterApplicationSubmission({
 		application,
-		rentalId: initialRental.id,
 	});
 
 	await Promise.all(
@@ -196,13 +195,14 @@ export async function submitApplication(formData: FormData) {
 		text: emailContent.text,
 		payloadSnapshot: {
 			applicationId: application.id,
+			tenantId: tenant.id,
+			nextStep: "login_to_create_rental_request",
 		},
 	});
 
 	return {
 		tenantId: tenant.id,
 		applicationId: application.id,
-		rentalId: initialRental.id,
 	};
 }
 

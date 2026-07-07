@@ -4,15 +4,17 @@ import { useState } from "react";
 import { ArrowPathIcon, PlusIcon } from "@heroicons/react/24/outline";
 import ActionButton from "@/components/ui/ActionButton";
 import ScreenModal from "@/components/ui/ScreenModal";
+import RentalEditableFields from "@/components/rentals/RentalEditableFields";
+import { serializeRequestedTrailerTypes } from "@/components/rentals/RequestedTrailerTypesField";
 
 function emptyForm() {
 	return {
 		requestType: "new_rental",
-		requestedTrailerCount: "1",
-		requestedTrailerType: "",
 		contractStartDate: "",
+		operationalStartDate: "",
 		endDate: "",
 		billingFrequency: "monthly",
+		requestedTrailerTypes: [{ trailerType: "flatbed", quantity: "1" }],
 		requestSummary: "",
 	};
 }
@@ -36,7 +38,9 @@ export default function TenantRentalRequestPanel({ compact = false }) {
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({
 					...form,
-					requestedTrailerCount: Number(form.requestedTrailerCount),
+					requestedTrailerTypes: serializeRequestedTrailerTypes(
+						form.requestedTrailerTypes
+					),
 				}),
 			});
 			const json = await response.json().catch(() => ({}));
@@ -88,101 +92,15 @@ export default function TenantRentalRequestPanel({ compact = false }) {
 					</div>
 
 					<form onSubmit={handleSubmit} className="grid gap-4">
-						<div className="grid gap-4 md:grid-cols-2">
-							<label className="grid gap-2 text-sm font-medium text-neutral-700 dark:text-neutral-300">
-								Requested Trailer Count
-								<input
-									type="number"
-									min="1"
-									value={form.requestedTrailerCount}
-									onChange={(event) =>
-										setForm((current) => ({
-											...current,
-											requestedTrailerCount: event.target.value,
-										}))
-									}
-									className="w-full rounded-xl border border-(--border-soft) bg-white px-4 py-3 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-(--branding-700) dark:bg-neutral-950/50 dark:text-neutral-100"
-								/>
-							</label>
-							<label className="grid gap-2 text-sm font-medium text-neutral-700 dark:text-neutral-300">
-								Requested Trailer Type
-								<input
-									type="text"
-									value={form.requestedTrailerType}
-									onChange={(event) =>
-										setForm((current) => ({
-											...current,
-											requestedTrailerType: event.target.value,
-										}))
-									}
-									placeholder="Flatbed, enclosed, utility"
-									className="w-full rounded-xl border border-(--border-soft) bg-white px-4 py-3 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-(--branding-700) dark:bg-neutral-950/50 dark:text-neutral-100"
-								/>
-							</label>
-						</div>
-
-						<div className="grid gap-4 md:grid-cols-3">
-							<label className="grid gap-2 text-sm font-medium text-neutral-700 dark:text-neutral-300">
-								Requested Start Date
-								<input
-									type="date"
-									value={form.contractStartDate}
-									onChange={(event) =>
-										setForm((current) => ({
-											...current,
-											contractStartDate: event.target.value,
-										}))
-									}
-									className="w-full rounded-xl border border-(--border-soft) bg-white px-4 py-3 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-(--branding-700) dark:bg-neutral-950/50 dark:text-neutral-100"
-								/>
-							</label>
-							<label className="grid gap-2 text-sm font-medium text-neutral-700 dark:text-neutral-300">
-								Requested End Date
-								<input
-									type="date"
-									value={form.endDate}
-									onChange={(event) =>
-										setForm((current) => ({
-											...current,
-											endDate: event.target.value,
-										}))
-									}
-									className="w-full rounded-xl border border-(--border-soft) bg-white px-4 py-3 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-(--branding-700) dark:bg-neutral-950/50 dark:text-neutral-100"
-								/>
-							</label>
-							<label className="grid gap-2 text-sm font-medium text-neutral-700 dark:text-neutral-300">
-								Billing Frequency
-								<select
-									value={form.billingFrequency}
-									onChange={(event) =>
-										setForm((current) => ({
-											...current,
-											billingFrequency: event.target.value,
-										}))
-									}
-									className="w-full rounded-xl border border-(--border-soft) bg-white px-4 py-3 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-(--branding-700) dark:bg-neutral-950/50 dark:text-neutral-100"
-								>
-									<option value="weekly">Weekly</option>
-									<option value="monthly">Monthly</option>
-									<option value="yearly">Yearly</option>
-								</select>
-							</label>
-						</div>
-
-						<label className="grid gap-2 text-sm font-medium text-neutral-700 dark:text-neutral-300">
-							Notes
-							<textarea
-								rows={5}
-								value={form.requestSummary}
-								onChange={(event) =>
-									setForm((current) => ({
-										...current,
-										requestSummary: event.target.value,
-									}))
-								}
-								className="w-full rounded-2xl border border-(--border-soft) bg-white px-4 py-3 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-(--branding-700) dark:bg-neutral-950/50 dark:text-neutral-100"
-							/>
-						</label>
+						<RentalEditableFields
+							form={form}
+							onFieldChange={(field, value) =>
+								setForm((current) => ({ ...current, [field]: value }))
+							}
+							includeOperationalStart
+							noteLabel="Notes"
+							noteRows={5}
+						/>
 
 						<div className="flex justify-end">
 							<ActionButton type="submit" tone="primary" disabled={submitting}>

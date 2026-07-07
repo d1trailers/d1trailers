@@ -1,5 +1,7 @@
 "use client";
 
+import RequestedTrailerTypesField from "@/components/rentals/RequestedTrailerTypesField";
+
 const RENTAL_STATUS_OPTIONS = [
 	["draft", "Draft"],
 	["customer_review", "Customer Review"],
@@ -40,14 +42,19 @@ function InputLabel({ label, children }) {
 
 function baseInputClass(multiline = false) {
 	return multiline
-		? "w-full rounded-2xl border border-(--border-soft) bg-white px-4 py-3 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-(--branding-700) dark:bg-neutral-950/50 dark:text-neutral-100"
-		: "w-full rounded-xl border border-(--border-soft) bg-white px-4 py-3 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-(--branding-700) dark:bg-neutral-950/50 dark:text-neutral-100";
+		? "w-full rounded-2xl border border-(--border-soft) bg-white px-4 py-3 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-(--branding-700) disabled:cursor-not-allowed disabled:bg-neutral-100 disabled:text-neutral-500 dark:bg-neutral-950/50 dark:text-neutral-100 dark:disabled:bg-neutral-900/70"
+		: "w-full rounded-xl border border-(--border-soft) bg-white px-4 py-3 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-(--branding-700) disabled:cursor-not-allowed disabled:bg-neutral-100 disabled:text-neutral-500 dark:bg-neutral-950/50 dark:text-neutral-100 dark:disabled:bg-neutral-900/70";
 }
 
-function SelectField({ label, value, onChange, options }) {
+function SelectField({ label, value, onChange, options, disabled = false }) {
 	return (
 		<InputLabel label={label}>
-			<select value={value} onChange={onChange} className={baseInputClass()}>
+			<select
+				value={value}
+				onChange={onChange}
+				disabled={disabled}
+				className={baseInputClass()}
+			>
 				{options.map(([optionValue, optionLabel]) => (
 					<option key={optionValue} value={optionValue}>
 						{optionLabel}
@@ -66,123 +73,150 @@ export default function RentalEditableFields({
 	includeRate = false,
 	includeDeposit = false,
 	includeOperationalStart = false,
+	includeRequestDates = true,
+	includeRequestedTrailers = true,
+	includeBillingFrequency = true,
+	includeNotes = true,
+	disabledFields = {},
 	noteLabel = "Notes",
 	noteRows = 4,
 }) {
+	function isDisabled(field) {
+		return Boolean(disabledFields?.[field]);
+	}
+
 	return (
 		<div className="grid gap-4">
-			<div className="grid gap-4 md:grid-cols-2">
-				<SelectField
-					label="Billing Frequency"
-					value={form.billingFrequency}
-					onChange={(event) => onFieldChange("billingFrequency", event.target.value)}
-					options={BILLING_FREQUENCY_OPTIONS}
-				/>
-			</div>
+			{includeBillingFrequency ? (
+				<div className="grid gap-4">
+					<SelectField
+						label="Billing Frequency"
+						value={form.billingFrequency}
+						onChange={(event) =>
+							onFieldChange("billingFrequency", event.target.value)
+						}
+						options={BILLING_FREQUENCY_OPTIONS}
+						disabled={isDisabled("billingFrequency")}
+					/>
+				</div>
+			) : null}
 
 			{includeRentalStatus || includeBillingStatus ? (
-				<div className="grid gap-4 md:grid-cols-2">
+				<div className="grid gap-4">
 					{includeRentalStatus ? (
 						<SelectField
 							label="Rental Status"
 							value={form.status}
 							onChange={(event) => onFieldChange("status", event.target.value)}
 							options={RENTAL_STATUS_OPTIONS}
+							disabled={isDisabled("status")}
 						/>
 					) : null}
 					{includeBillingStatus ? (
 						<SelectField
 							label="Billing Status"
 							value={form.billingStatus}
-							onChange={(event) => onFieldChange("billingStatus", event.target.value)}
+							onChange={(event) =>
+								onFieldChange("billingStatus", event.target.value)
+							}
 							options={BILLING_STATUS_OPTIONS}
+							disabled={isDisabled("billingStatus")}
 						/>
 					) : null}
 				</div>
 			) : null}
 
-			<div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-				{includeRate ? (
-					<InputLabel label="Rate">
-						<input
-							type="number"
-							min="0"
-							step="0.01"
-							value={form.rate}
-							onChange={(event) => onFieldChange("rate", event.target.value)}
-							className={baseInputClass()}
-						/>
-					</InputLabel>
-				) : null}
-				{includeDeposit ? (
-					<InputLabel label="Deposit">
-						<input
-							type="number"
-							min="0"
-							step="0.01"
-							value={form.depositAmount}
-							onChange={(event) => onFieldChange("depositAmount", event.target.value)}
-							className={baseInputClass()}
-						/>
-					</InputLabel>
-				) : null}
-				<InputLabel label="Requested Trailer Count">
-					<input
-						type="number"
-						min="1"
-						value={form.requestedTrailerCount}
-						onChange={(event) => onFieldChange("requestedTrailerCount", event.target.value)}
-						className={baseInputClass()}
-					/>
-				</InputLabel>
-			</div>
+			{includeRate || includeDeposit ? (
+				<div className="grid gap-4">
+					{includeRate ? (
+						<InputLabel label="Rate">
+							<input
+								type="number"
+								min="0"
+								step="0.01"
+								value={form.rate}
+								onChange={(event) => onFieldChange("rate", event.target.value)}
+								disabled={isDisabled("rate")}
+								className={baseInputClass()}
+							/>
+						</InputLabel>
+					) : null}
+					{includeDeposit ? (
+						<InputLabel label="Deposit">
+							<input
+								type="number"
+								min="0"
+								step="0.01"
+								value={form.depositAmount}
+								onChange={(event) =>
+									onFieldChange("depositAmount", event.target.value)
+								}
+								disabled={isDisabled("depositAmount")}
+								className={baseInputClass()}
+							/>
+						</InputLabel>
+					) : null}
+				</div>
+			) : null}
 
-			<div className={`grid gap-4 ${includeOperationalStart ? "md:grid-cols-2 xl:grid-cols-3" : "md:grid-cols-2"}`}>
-				<InputLabel label="Contract Start">
-					<input
-						type="date"
-						value={form.contractStartDate}
-						onChange={(event) => onFieldChange("contractStartDate", event.target.value)}
-						className={baseInputClass()}
-					/>
-				</InputLabel>
-				{includeOperationalStart ? (
-					<InputLabel label="Operational Start">
+			{includeRequestDates ? (
+				<div className="grid gap-4 grid-cols-3">
+					<InputLabel label="Contract Start">
 						<input
 							type="date"
-							value={form.operationalStartDate}
-							onChange={(event) => onFieldChange("operationalStartDate", event.target.value)}
+							value={form.contractStartDate}
+							onChange={(event) =>
+								onFieldChange("contractStartDate", event.target.value)
+							}
+							disabled={isDisabled("contractStartDate")}
 							className={baseInputClass()}
 						/>
 					</InputLabel>
-				) : null}
-				<InputLabel label="End Date">
-					<input
-						type="date"
-						value={form.endDate}
-						onChange={(event) => onFieldChange("endDate", event.target.value)}
-						className={baseInputClass()}
+					{includeOperationalStart ? (
+						<InputLabel label="Operational Start">
+							<input
+								type="date"
+								value={form.operationalStartDate}
+								onChange={(event) =>
+									onFieldChange("operationalStartDate", event.target.value)
+								}
+								disabled={isDisabled("operationalStartDate")}
+								className={baseInputClass()}
+							/>
+						</InputLabel>
+					) : null}
+					<InputLabel label="End Date">
+						<input
+							type="date"
+							value={form.endDate}
+							onChange={(event) => onFieldChange("endDate", event.target.value)}
+							disabled={isDisabled("endDate")}
+							className={baseInputClass()}
+						/>
+					</InputLabel>
+				</div>
+			) : null}
+
+			{includeRequestedTrailers ? (
+				<RequestedTrailerTypesField
+					value={form.requestedTrailerTypes}
+					onChange={(rows) => onFieldChange("requestedTrailerTypes", rows)}
+				/>
+			) : null}
+
+			{includeNotes ? (
+				<InputLabel label={noteLabel}>
+					<textarea
+						rows={noteRows}
+						value={form.requestSummary}
+						onChange={(event) =>
+							onFieldChange("requestSummary", event.target.value)
+						}
+						disabled={isDisabled("requestSummary")}
+						className={baseInputClass(true)}
 					/>
 				</InputLabel>
-			</div>
-
-			<InputLabel label="Requested Trailer Type">
-				<input
-					type="text"
-					value={form.requestedTrailerType}
-					onChange={(event) => onFieldChange("requestedTrailerType", event.target.value)}
-					className={baseInputClass()}
-				/>
-			</InputLabel>
-
-			<InputLabel label={noteLabel}>
-				<textarea
-					rows={noteRows}
-					value={form.requestSummary}
-					onChange={(event) => onFieldChange("requestSummary", event.target.value)}
-					className={baseInputClass(true)}
-				/>
-			</InputLabel>
+			) : null}
 		</div>
 	);
 }

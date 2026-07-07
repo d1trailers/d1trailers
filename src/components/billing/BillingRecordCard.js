@@ -1,6 +1,7 @@
 "use client";
 
 import StatusBadge from "@/components/admin/StatusBadge";
+import { prettifyEnumLabel } from "@/lib/displayLabels";
 
 function formatDate(value) {
 	if (!value) return "-";
@@ -20,11 +21,7 @@ function formatCurrency(value) {
 }
 
 function formatLabel(value) {
-	if (!value) return "-";
-	return String(value)
-		.split("_")
-		.map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-		.join(" ");
+	return prettifyEnumLabel(value, "-");
 }
 
 export default function BillingRecordCard({
@@ -91,6 +88,9 @@ export default function BillingRecordCard({
 						Billing Status
 					</div>
 					<StatusBadge status={record.billingStatus} />
+					<span className="mt-2 text-xs font-semibold text-(--branding-700)">
+						Open billing details
+					</span>
 				</div>
 			</div>
 		</button>

@@ -73,7 +73,9 @@ export default function PortalBillingActions({ rentalId = "" }) {
 					{loading === "manage" ? "Opening..." : "Manage Billing"}
 				</ActionButton>
 				<ActionButton tone="secondary" onClick={() => runAction("pay")} disabled={Boolean(loading)}>
-					{loading === "pay" ? "Preparing..." : "Pay Now"}
+					{loading === "pay"
+						? "Preparing..."
+						: "Pay This Upcoming Invoice Right Now"}
 				</ActionButton>
 			</div>
 			{message ? <p className={`text-sm ${messageClass}`}>{message}</p> : null}

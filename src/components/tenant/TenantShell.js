@@ -1,6 +1,5 @@
 "use client";
 
-import AccountSwitcher from "@/components/account/AccountSwitcher";
 import PortalFrame from "@/components/portal/PortalFrame";
 
 export default function TenantShell({
@@ -17,12 +16,6 @@ export default function TenantShell({
 			accountLines={[`Signed In As ${contextEmail}`]}
 			navItems={navItems}
 			activeItemId={activeSection}
-			sidebarFooter={
-				<AccountSwitcher
-					memberships={accountContext.memberships}
-					activeTenantId={accountContext.activeTenantId}
-				/>
-			}
 		>
 			{children}
 		</PortalFrame>

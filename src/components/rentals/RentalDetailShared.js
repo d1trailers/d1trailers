@@ -5,6 +5,8 @@ import {
 } from "@heroicons/react/24/outline";
 import Card from "@/components/ui/Card";
 import StatusBadge from "@/components/admin/StatusBadge";
+import { formatTrailerType } from "@/lib/trailerTypes";
+import { prettifyEnumLabel } from "@/lib/displayLabels";
 
 export function formatRentalDate(value, options) {
 	if (!value) return "-";
@@ -33,11 +35,7 @@ export function formatRentalCurrency(value) {
 }
 
 export function formatRentalLabel(value) {
-	if (!value) return "Unknown";
-	return String(value)
-		.split("_")
-		.map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
-		.join(" ");
+	return prettifyEnumLabel(value);
 }
 
 export function getRentalRecordTitle(rental) {
@@ -140,7 +138,7 @@ export function RentalAssignmentsCard({
 												assignment.trailerId}
 										</p>
 										<p className="text-sm text-neutral-600 dark:text-neutral-400">
-											{assignment.trailer?.trailerType || "Trailer"} |{" "}
+											{formatTrailerType(assignment.trailer?.trailerType)} |{" "}
 											{formatRentalDate(assignment.startDate)} to{" "}
 											{formatRentalDate(assignment.endDate)}
 										</p>

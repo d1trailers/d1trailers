@@ -1,6 +1,7 @@
 "use client";
 
 import StatusBadge from "@/components/admin/StatusBadge";
+import { buildRentalTrailerTypeSummary } from "@/lib/trailerTypes";
 
 function formatDate(value) {
 	if (!value) return "-";
@@ -33,18 +34,15 @@ export default function RentalRecordCard({
 	meta,
 	showTenantName = false,
 	pendingBadge = null,
+	showTrailerTypeSummary = false,
 }) {
 	const resolvedTitle = title || (showTenantName ? rental.tenantName || "Unknown tenant" : getRentalTitle(rental));
-	const resolvedSubtitle =
-		subtitle ||
-		(showTenantName
-			? getRentalTitle(rental)
-			: rental.requestedTrailerType || "Trailer type pending");
 	const resolvedMeta =
 		meta ||
 		(rental.contractStartDate
 			? `${formatDate(rental.contractStartDate)} to ${formatDate(rental.endDate)}`
 			: "Dates pending");
+	const trailerTypeSummary = buildRentalTrailerTypeSummary(rental);
 
 	return (
 		<button
@@ -57,17 +55,38 @@ export default function RentalRecordCard({
 					<p className="font-semibold text-neutral-950 dark:text-neutral-50">
 						{resolvedTitle}
 					</p>
-					<p className="text-sm text-neutral-600 dark:text-neutral-400">
-						{resolvedSubtitle}
-					</p>
+					{subtitle ? (
+						<p className="text-sm text-neutral-600 dark:text-neutral-400">
+							{subtitle}
+						</p>
+					) : null}
 					<p className="mt-2 text-xs text-neutral-500 dark:text-neutral-400">
 						{resolvedMeta}
 					</p>
 				</div>
 				<div className="flex flex-wrap justify-end gap-2">
-					{pendingBadge}
-					<StatusBadge status={rental.status} />
-					{rental.billingStatus ? <StatusBadge status={rental.billingStatus} /> : null}
+					{showTrailerTypeSummary ? (
+						trailerTypeSummary.length ? (
+							trailerTypeSummary.map((item) => (
+								<span
+									key={`${item.label}-${item.count}`}
+									className="rounded-full border border-(--border-soft) bg-white px-3 py-1 text-xs font-semibold text-neutral-700 shadow-sm dark:bg-neutral-950 dark:text-neutral-200"
+								>
+									{item.label} x {item.count}
+								</span>
+							))
+						) : (
+							<span className="rounded-full border border-dashed border-(--border-soft) px-3 py-1 text-xs font-semibold text-neutral-500 dark:text-neutral-400">
+								Trailer type pending
+							</span>
+						)
+					) : (
+						<>
+							{pendingBadge}
+							<StatusBadge status={rental.status} />
+							{rental.billingStatus ? <StatusBadge status={rental.billingStatus} /> : null}
+						</>
+					)}
 				</div>
 			</div>
 		</button>

@@ -52,20 +52,29 @@ function sanitizeDigitsInput(event, maxDigits) {
 	event.currentTarget.value = digitsOnly(event.currentTarget.value).slice(0, maxDigits);
 }
 
+function FieldHint({ children }) {
+	return (
+		<p className="text-xs leading-relaxed text-neutral-500 dark:text-neutral-400">
+			{children}
+		</p>
+	);
+}
+
 export default function Apply() {
 	return (
 		<div className="grid grid-flow-row w-full h-full gap-7 mt-25 p-5 md:px-12 lg:px-20 pb-12">
 			<header className="surface-panel motion-enter rounded-2xl p-6 md:p-8">
 				<p className="text-xs uppercase tracking-[0.14em] text-neutral-600 dark:text-neutral-400">
-					New Rental Intake
+					New Account Intake
 				</p>
 				<h1 className="font-syne text-3xl md:text-5xl lg:text-6xl font-bold mt-2">
-					Rental Application
+					Account Application
 				</h1>
 				<p className="mt-3 max-w-3xl text-neutral-700 dark:text-neutral-300 leading-relaxed">
-					Complete the form below with accurate business and contact details.
-					Your information is used for identity verification and rental
-					qualification only.
+					Complete the form below to create your D1Trailers account and
+					securely submit verification documents. Once your account is created,
+					you can sign in immediately and create rental requests from the
+					portal.
 				</p>
 			</header>
 			<Form />
@@ -92,6 +101,20 @@ function Form() {
 
 		try {
 			const formData = new FormData(event.currentTarget);
+			const requestedStart = String(
+				formData.get("requestedRentalStartDate") ?? "",
+			);
+			const requestedEnd = String(formData.get("requestedRentalEndDate") ?? "");
+			if (
+				requestedStart &&
+				requestedEnd &&
+				new Date(requestedEnd).getTime() < new Date(requestedStart).getTime()
+			) {
+				setError("Requested rental end date must be on or after the start date.");
+				setSubmitting(false);
+				return;
+			}
+
 			const response = await fetch("/api/applications", {
 				method: "POST",
 				body: formData,
@@ -110,7 +133,7 @@ function Form() {
 
 			formRef.current?.reset();
 			setSuccess(
-				"Application submitted. Our team will review it shortly, then send your first rental draft through the portal tied to this email."
+				"Account application submitted. You can sign in with this email and create rental requests from your portal once your account access is claimed."
 			);
 			setSubmitting(false);
 		} catch {
@@ -247,50 +270,102 @@ function Form() {
 				<section className={sectionClass}>
 					<SectionTitle title="Compliance Details" />
 					<div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-						<input
-							name="ein"
-							placeholder="12-3456789"
-							className={inputClass}
-							inputMode="numeric"
-							maxLength={10}
-							pattern="[0-9]{2}-[0-9]{7}"
-							title="Enter a 9-digit EIN in the format 12-3456789"
-							onInput={(event) => {
-								event.currentTarget.value = formatEinInput(
-									event.currentTarget.value,
-								);
-							}}
-							required
-						/>
-						<input
-							name="mcNumber"
-							placeholder="MC Number *"
-							className={inputClass}
-							inputMode="numeric"
-							maxLength={10}
-							pattern="[0-9]{4,10}"
-							title="Enter a numeric MC number"
-							onInput={(event) => sanitizeDigitsInput(event, 10)}
-							required
-						/>
-						<input
-							name="usdot"
-							placeholder="USDOT Number *"
-							className={inputClass}
-							inputMode="numeric"
-							maxLength={9}
-							pattern="[0-9]{4,9}"
-							title="Enter a numeric USDOT number"
-							onInput={(event) => sanitizeDigitsInput(event, 9)}
-							required
-						/>
+						<label className="space-y-1.5">
+							<span className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">
+								Federal Tax ID (EIN)
+							</span>
+							<input
+								name="ein"
+								placeholder="12-3456789"
+								className={inputClass}
+								inputMode="numeric"
+								maxLength={10}
+								pattern="[0-9]{2}-[0-9]{7}"
+								title="Enter a 9-digit EIN in the format 12-3456789"
+								onInput={(event) => {
+									event.currentTarget.value = formatEinInput(
+										event.currentTarget.value,
+									);
+								}}
+								required
+							/>
+							<FieldHint>
+								Your business tax identification number, formatted as
+								12-3456789.
+							</FieldHint>
+						</label>
+						<label className="space-y-1.5">
+							<span className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">
+								MC Number
+							</span>
+							<input
+								name="mcNumber"
+								placeholder="MC Number *"
+								className={inputClass}
+								inputMode="numeric"
+								maxLength={10}
+								pattern="[0-9]{4,10}"
+								title="Enter a numeric MC number"
+								onInput={(event) => sanitizeDigitsInput(event, 10)}
+								required
+							/>
+							<FieldHint>
+								Your FMCSA Motor Carrier number, used to identify interstate
+								for-hire carriers.
+							</FieldHint>
+						</label>
+						<label className="space-y-1.5">
+							<span className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">
+								USDOT Number
+							</span>
+							<input
+								name="usdot"
+								placeholder="USDOT Number *"
+								className={inputClass}
+								inputMode="numeric"
+								maxLength={9}
+								pattern="[0-9]{4,9}"
+								title="Enter a numeric USDOT number"
+								onInput={(event) => sanitizeDigitsInput(event, 9)}
+								required
+							/>
+							<FieldHint>
+								Your U.S. Department of Transportation number for safety and
+								carrier records.
+							</FieldHint>
+						</label>
 					</div>
-					<input
-						name="rentalDuration"
-						placeholder="Requested Rental Duration *"
-						className={inputClass}
-						required
-					/>
+					<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+						<label className="space-y-1.5">
+							<span className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">
+								Requested Start Date
+							</span>
+							<input
+								type="date"
+								name="requestedRentalStartDate"
+								className={inputClass}
+								required
+							/>
+							<FieldHint>
+								Use your best expected start date. You can revise exact rental
+								terms later from your portal.
+							</FieldHint>
+						</label>
+						<label className="space-y-1.5">
+							<span className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">
+								Requested End Date
+							</span>
+							<input
+								type="date"
+								name="requestedRentalEndDate"
+								className={inputClass}
+								required
+							/>
+							<FieldHint>
+								The requested return/end date for the initial rental window.
+							</FieldHint>
+						</label>
+					</div>
 				</section>
 
 				<section className={sectionClass}>
@@ -369,7 +444,7 @@ function Form() {
 					/>
 					<p className="text-xs text-neutral-600 dark:text-neutral-400 leading-relaxed">
 						Your SSN is collected for identity verification and is not used for
-						credit approval.
+						credit approval. It should match the principal owner listed above.
 					</p>
 				</section>
 

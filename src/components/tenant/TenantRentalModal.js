@@ -11,28 +11,59 @@ import {
 	formatRentalDate,
 	formatRentalLabel,
 	getRentalRecordTitle,
-	RentalAssignmentsCard,
 	RentalDocumentsCard,
 	RentalHeaderCard,
 	RentalMetricTile,
 } from "@/components/rentals/RentalDetailShared";
+import RentalTrailerChecklist from "@/components/rentals/RentalTrailerChecklist";
 import RentalDocumentUploadCard from "@/components/rentals/RentalDocumentUploadCard";
+import ConfirmActionModal from "@/components/ui/ConfirmActionModal";
 import {
 	RentalBillingCard,
 	RentalCommunicationsCard,
 	RentalSnapshotCard,
 	RentalTimelineGrid,
 } from "@/components/rentals/RentalActivitySections";
+import { getTrailerTypeFormValue } from "@/lib/trailerTypes";
+import { serializeRequestedTrailerTypes } from "@/components/rentals/RequestedTrailerTypesField";
 
 function emptyRequestForm() {
 	return {
 		billingFrequency: "monthly",
 		contractStartDate: "",
+		operationalStartDate: "",
 		endDate: "",
-		requestedTrailerCount: "",
-		requestedTrailerType: "",
+		requestedTrailerTypes: [{ trailerType: "flatbed", quantity: "1" }],
 		requestSummary: "",
 	};
+}
+
+function getRequestedTrailerTypesForForm(rental) {
+	const rows = Array.isArray(rental?.requestedTrailerTypes)
+		? rental.requestedTrailerTypes
+		: [];
+	const normalized = rows
+		.map((row) => ({
+			trailerType: getTrailerTypeFormValue(row?.trailerType) || "flatbed",
+			quantity:
+				row?.quantity === null || row?.quantity === undefined
+					? "1"
+					: String(row.quantity),
+		}))
+		.filter((row) => row.trailerType);
+
+	if (normalized.length) return normalized;
+
+	return [
+		{
+			trailerType: getTrailerTypeFormValue(rental?.requestedTrailerType) || "flatbed",
+			quantity:
+				rental?.requestedTrailerCount === null ||
+				rental?.requestedTrailerCount === undefined
+					? "1"
+					: String(rental.requestedTrailerCount),
+		},
+	];
 }
 
 function isClosedRequestStatus(status) {
@@ -64,6 +95,8 @@ export default function TenantRentalModal({
 	const [submitError, setSubmitError] = useState("");
 	const [submitSuccess, setSubmitSuccess] = useState("");
 	const [removingAssignmentId, setRemovingAssignmentId] = useState("");
+	const [pendingAssignmentRemoval, setPendingAssignmentRemoval] = useState(null);
+	const [pendingRentalCancellation, setPendingRentalCancellation] = useState(false);
 
 	const canModifyRental =
 		Boolean(rental) &&
@@ -72,6 +105,11 @@ export default function TenantRentalModal({
 	const canApproveDraft = canModifyRental && rental.status === "customer_review";
 	const canCancelRental = canModifyRental;
 	const canAccessDocuments = canViewDocuments || canManageRentals;
+	const approvedTermsLocked =
+		rental?.recordKind === "agreement" ||
+		["awaiting_first_payment", "active", "past_due", "suspended"].includes(
+			rental?.status
+		);
 	const changeHeading =
 		rental?.status === "customer_review"
 			? "Review Proposal"
@@ -90,12 +128,9 @@ export default function TenantRentalModal({
 			setChangeRequest({
 				billingFrequency: rental.billingFrequency || "monthly",
 				contractStartDate: rental.contractStartDate || "",
+				operationalStartDate: rental.operationalStartDate || "",
 				endDate: rental.endDate || "",
-				requestedTrailerCount:
-					typeof rental.requestedTrailerCount === "number"
-						? String(rental.requestedTrailerCount)
-						: "",
-				requestedTrailerType: rental.requestedTrailerType || "",
+				requestedTrailerTypes: getRequestedTrailerTypesForForm(rental),
 				requestSummary: rental.requestSummary || "",
 			});
 			setSubmitError("");
@@ -118,6 +153,7 @@ export default function TenantRentalModal({
 
 	async function handleRentalAction(action) {
 		setSubmitting(true);
+		setPendingRentalCancellation(false);
 		setSubmitError("");
 		setSubmitSuccess("");
 
@@ -129,11 +165,11 @@ export default function TenantRentalModal({
 					action,
 					billingFrequency: changeRequest.billingFrequency,
 					contractStartDate: changeRequest.contractStartDate,
+					operationalStartDate: changeRequest.operationalStartDate,
 					endDate: changeRequest.endDate,
-					requestedTrailerCount: changeRequest.requestedTrailerCount
-						? Number(changeRequest.requestedTrailerCount)
-						: "",
-					requestedTrailerType: changeRequest.requestedTrailerType,
+					requestedTrailerTypes: serializeRequestedTrailerTypes(
+						changeRequest.requestedTrailerTypes
+					),
 					requestSummary: changeRequest.requestSummary,
 				}),
 			});
@@ -171,6 +207,7 @@ export default function TenantRentalModal({
 
 	async function handleRemoveAssignment(assignmentId) {
 		setRemovingAssignmentId(assignmentId);
+		setPendingAssignmentRemoval(null);
 		setSubmitError("");
 		setSubmitSuccess("");
 
@@ -199,6 +236,14 @@ export default function TenantRentalModal({
 			setSubmitError("Unable to remove this trailer assignment.");
 			setRemovingAssignmentId("");
 		}
+	}
+
+	function requestAssignmentRemoval(trailerId) {
+		const assignment = (rental.assignments || []).find(
+			(candidate) => candidate.trailerId === trailerId
+		);
+		if (!assignment) return;
+		setPendingAssignmentRemoval(assignment);
 	}
 
 	async function handleUploadDocument(formData) {
@@ -304,6 +349,15 @@ export default function TenantRentalModal({
 							<RentalEditableFields
 								form={changeRequest}
 								onFieldChange={updateChangeField}
+								includeOperationalStart
+								disabledFields={
+									approvedTermsLocked
+										? {
+												billingFrequency: true,
+												contractStartDate: true,
+											}
+										: {}
+								}
 								noteLabel="Notes"
 								noteRows={4}
 							/>
@@ -311,6 +365,9 @@ export default function TenantRentalModal({
 								Submitting changes sends this rental back to admin review as
 								`Changes Pending` while keeping the current billing status in place
 								until the revision is finalized.
+								{approvedTermsLocked
+									? " Contract start and billing frequency are locked after approval."
+									: ""}
 							</p>
 							<div className="flex flex-wrap justify-end gap-3">
 								<ActionButton
@@ -340,7 +397,7 @@ export default function TenantRentalModal({
 									<ActionButton
 										type="button"
 										tone="danger"
-										onClick={() => handleRentalAction("cancel_rental")}
+										onClick={() => setPendingRentalCancellation(true)}
 										disabled={submitting}
 									>
 										Cancel Rental
@@ -358,13 +415,17 @@ export default function TenantRentalModal({
 				) : null}
 
 				<div className="grid gap-4 xl:grid-cols-[1fr_1fr]">
-					<RentalAssignmentsCard
-						assignments={rental.assignments || []}
-						title="Assignments"
-						emptyTitle="No Assignments"
+					<RentalTrailerChecklist
+						title="Assigned Trailers"
+						description="Trailers currently connected to this rental."
+						trailers={trailers.map((trailer) => ({
+							...trailer,
+							assignmentStatus: "Assigned",
+						}))}
+						selectedTrailerIds={trailers.map((trailer) => trailer.id)}
+						onToggleTrailer={canManageRentals ? requestAssignmentRemoval : null}
+						readOnly={!canManageRentals}
 						emptyMessage="No trailer assignments are attached to this rental."
-						onRemoveAssignment={canManageRentals ? handleRemoveAssignment : null}
-						removingAssignmentId={removingAssignmentId}
 					/>
 					<RentalSnapshotCard rental={rental} />
 				</div>
@@ -398,6 +459,32 @@ export default function TenantRentalModal({
 					<RentalBillingCard rental={rental} enableActions />
 				) : null}
 			</div>
+
+			<ConfirmActionModal
+				open={Boolean(pendingAssignmentRemoval)}
+				onClose={() => setPendingAssignmentRemoval(null)}
+				onConfirm={() =>
+					pendingAssignmentRemoval
+						? handleRemoveAssignment(pendingAssignmentRemoval.id)
+						: undefined
+				}
+				title="Unassign this trailer?"
+				message="This will remove the trailer assignment from the rental and return the trailer to available inventory. This action is not immediately reversible from the tenant portal."
+				confirmLabel="Unassign Trailer"
+				loading={Boolean(
+					pendingAssignmentRemoval &&
+						removingAssignmentId === pendingAssignmentRemoval.id
+				)}
+			/>
+			<ConfirmActionModal
+				open={pendingRentalCancellation}
+				onClose={() => setPendingRentalCancellation(false)}
+				onConfirm={() => handleRentalAction("cancel_rental")}
+				title="Cancel this rental?"
+				message="This will cancel the rental workflow and release active trailer assignments. Use this only when you are sure the rental should be closed."
+				confirmLabel="Cancel Rental"
+				loading={submitting}
+			/>
 		</ScreenModal>
 	);
 }

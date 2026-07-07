@@ -269,6 +269,16 @@ export type AssignmentRecord = {
 	rental?: RentalRecord | null;
 };
 
+export type RentalRequestedTrailerTypeRecord = {
+	id: string;
+	rental_id: string;
+	trailer_type: string;
+	quantity: number;
+	sort_order: number;
+	created_at: string;
+	updated_at: string;
+};
+
 export type RentalRecord = {
 	id: string;
 	tenant_id: string;
@@ -299,6 +309,7 @@ export type RentalRecord = {
 	created_at: string;
 	updated_at: string;
 	assignments?: AssignmentRecord[];
+	requested_trailer_types?: RentalRequestedTrailerTypeRecord[];
 	tenant?: TenantRecord | null;
 	application?: ApplicationRecord | null;
 	parent_rental?: RentalRecord | null;
@@ -859,6 +870,17 @@ export async function listTimelineItemsByTenantId(tenantId: string) {
 	return (data as TimelineItemRecord[]) ?? [];
 }
 
+export async function listAllTimelineItemsByTenantId(tenantId: string) {
+	const { data, error } = await admin()
+		.from("timeline_items")
+		.select("*")
+		.eq("tenant_id", tenantId)
+		.order("sort_order", { ascending: true })
+		.order("created_at", { ascending: true });
+	if (error) throw new Error(error.message);
+	return (data as TimelineItemRecord[]) ?? [];
+}
+
 export async function listTimelineItemsByTenantIds(tenantIds: string[]) {
 	if (!tenantIds.length) {
 		return [] as TimelineItemRecord[];
@@ -1133,6 +1155,22 @@ async function listAssignmentsByRentalIds(rentalIds: string[]) {
 	return (data as unknown as AssignmentRecord[]) ?? [];
 }
 
+async function listRequestedTrailerTypesByRentalIds(rentalIds: string[]) {
+	if (!rentalIds.length) {
+		return [] as RentalRequestedTrailerTypeRecord[];
+	}
+
+	const { data, error } = await admin()
+		.from("rental_requested_trailer_types")
+		.select("*")
+		.in("rental_id", rentalIds)
+		.order("sort_order", { ascending: true })
+		.order("created_at", { ascending: true });
+	if (error) throw new Error(error.message);
+
+	return (data as RentalRequestedTrailerTypeRecord[]) ?? [];
+}
+
 async function listBillingInvoiceLinesByInvoiceIds(invoiceIds: string[]) {
 	if (!invoiceIds.length) {
 		return [] as BillingInvoiceLineRecord[];
@@ -1215,10 +1253,18 @@ async function hydrateRentals(rentals: RentalRecord[]) {
 		...new Set(rentals.map((rental) => rental.application_id).filter(Boolean)),
 	] as string[];
 
-	const [tenants, applications, assignments, documents, billingInvoices] = await Promise.all([
+	const [
+		tenants,
+		applications,
+		assignments,
+		requestedTrailerTypes,
+		documents,
+		billingInvoices,
+	] = await Promise.all([
 		listTenantsByIds(tenantIds),
 		listApplicationsByIds(applicationIds),
 		listAssignmentsByRentalIds(rentalIds),
+		listRequestedTrailerTypesByRentalIds(rentalIds),
 		listRentalDocumentsByRentalIds(rentalIds),
 		listBillingInvoicesByRentalIds(rentalIds),
 	]);
@@ -1228,6 +1274,10 @@ async function hydrateRentals(rentals: RentalRecord[]) {
 		applications.map((application) => [application.id, application]),
 	);
 	const assignmentsByRentalId = new Map<string, AssignmentRecord[]>();
+	const requestedTrailerTypesByRentalId = new Map<
+		string,
+		RentalRequestedTrailerTypeRecord[]
+	>();
 	const documentsByRentalId = new Map<string, RentalDocumentRecord[]>();
 	const billingInvoicesByRentalId = new Map<string, BillingInvoiceRecord[]>();
 
@@ -1235,6 +1285,16 @@ async function hydrateRentals(rentals: RentalRecord[]) {
 		const current = assignmentsByRentalId.get(assignment.rental_id) ?? [];
 		current.push(assignment);
 		assignmentsByRentalId.set(assignment.rental_id, current);
+	}
+
+	for (const requestedTrailerType of requestedTrailerTypes) {
+		const current =
+			requestedTrailerTypesByRentalId.get(requestedTrailerType.rental_id) ?? [];
+		current.push(requestedTrailerType);
+		requestedTrailerTypesByRentalId.set(
+			requestedTrailerType.rental_id,
+			current,
+		);
 	}
 
 	for (const document of documents) {
@@ -1257,6 +1317,8 @@ async function hydrateRentals(rentals: RentalRecord[]) {
 			? applicationById.get(rental.application_id) ?? null
 			: null,
 		assignments: assignmentsByRentalId.get(rental.id) ?? [],
+		requested_trailer_types:
+			requestedTrailerTypesByRentalId.get(rental.id) ?? [],
 		documents: documentsByRentalId.get(rental.id) ?? [],
 		billing_invoices: billingInvoicesByRentalId.get(rental.id) ?? [],
 	}));
@@ -1446,6 +1508,39 @@ export async function updateRental(input: {
 	const rental = assertData(data as RentalRecord | null, error);
 	const [hydratedRental] = await hydrateRentals([rental]);
 	return hydratedRental;
+}
+
+export async function replaceRentalRequestedTrailerTypes(input: {
+	rentalId: string;
+	requestedTrailerTypes: Array<{
+		trailerType: string;
+		quantity: number;
+		sortOrder?: number;
+	}>;
+}) {
+	const { error: deleteError } = await admin()
+		.from("rental_requested_trailer_types")
+		.delete()
+		.eq("rental_id", input.rentalId);
+	if (deleteError) throw new Error(deleteError.message);
+
+	const rows = input.requestedTrailerTypes.map((item, index) => ({
+		rental_id: input.rentalId,
+		trailer_type: item.trailerType,
+		quantity: item.quantity,
+		sort_order: item.sortOrder ?? (index + 1) * 10,
+	}));
+
+	if (!rows.length) return [] as RentalRequestedTrailerTypeRecord[];
+
+	const { data, error } = await admin()
+		.from("rental_requested_trailer_types")
+		.insert(rows)
+		.select("*")
+		.order("sort_order", { ascending: true });
+	if (error) throw new Error(error.message);
+
+	return (data as RentalRequestedTrailerTypeRecord[]) ?? [];
 }
 
 export async function getRentalByStripeSubscriptionId(stripeSubscriptionId: string) {

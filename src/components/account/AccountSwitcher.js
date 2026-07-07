@@ -3,7 +3,11 @@
 import { useMemo, useState } from "react";
 import { ArrowPathIcon, ChevronUpDownIcon } from "@heroicons/react/24/outline";
 
-export default function AccountSwitcher({ memberships, activeTenantId }) {
+export default function AccountSwitcher({
+	memberships,
+	activeTenantId,
+	allowContinue = false,
+}) {
 	const [selectedTenantId, setSelectedTenantId] = useState(activeTenantId ?? "");
 	const [loading, setLoading] = useState(false);
 	const [error, setError] = useState("");
@@ -14,7 +18,14 @@ export default function AccountSwitcher({ memberships, activeTenantId }) {
 	);
 
 	async function handleSwitch() {
-		if (!selectedTenantId || selectedTenantId === activeTenantId) return;
+		if (!selectedTenantId) return;
+
+		if (selectedTenantId === activeTenantId && allowContinue) {
+			window.location.href = activeMembership?.destination || "/portal/overview";
+			return;
+		}
+
+		if (selectedTenantId === activeTenantId) return;
 		setLoading(true);
 		setError("");
 
@@ -83,13 +94,15 @@ export default function AccountSwitcher({ memberships, activeTenantId }) {
 					<button
 						type="button"
 						onClick={handleSwitch}
-						disabled={loading || selectedTenantId === activeTenantId}
+						disabled={
+							loading || (!allowContinue && selectedTenantId === activeTenantId)
+						}
 						className="inline-flex items-center justify-center gap-2 rounded-xl bg-(--branding-700) px-4 py-3 text-sm font-semibold text-neutral-50 transition hover:bg-(--branding-800) disabled:cursor-not-allowed disabled:opacity-60"
 					>
 						{loading ? (
 							<ArrowPathIcon className="h-5 w-5 animate-spin" aria-hidden="true" />
 						) : null}
-						Switch Account
+						{allowContinue ? "Continue" : "Switch Account"}
 					</button>
 				</div>
 			) : (

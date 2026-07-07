@@ -6,7 +6,6 @@ import {
 	CheckCircleIcon,
 	TrashIcon,
 } from "@heroicons/react/24/outline";
-import { TIMELINE_STAGE_VALUES } from "@/lib/contracts/journey";
 import Card from "@/components/ui/Card";
 import ScreenModal from "@/components/ui/ScreenModal";
 import ActionButton from "@/components/ui/ActionButton";
@@ -15,39 +14,22 @@ import SearchInput from "@/components/portal/SearchInput";
 import RentalEditableFields from "@/components/rentals/RentalEditableFields";
 import {
 	getRentalRecordTitle,
-	RentalAssignmentsCard,
 	RentalDocumentsCard,
 	RentalHeaderCard,
 } from "@/components/rentals/RentalDetailShared";
+import RentalTrailerChecklist from "@/components/rentals/RentalTrailerChecklist";
 import RentalDocumentUploadCard from "@/components/rentals/RentalDocumentUploadCard";
+import ConfirmActionModal from "@/components/ui/ConfirmActionModal";
 import {
 	RentalBillingCard,
-	RentalCommunicationsCard,
-	RentalSnapshotCard,
 	RentalTimelineGrid,
 } from "@/components/rentals/RentalActivitySections";
+import {
+	getTrailerTypeFormValue,
+} from "@/lib/trailerTypes";
+import { serializeRequestedTrailerTypes } from "@/components/rentals/RequestedTrailerTypesField";
 
 const EMPTY_ARRAY = [];
-const TIMELINE_ACTIONS = {
-	timeline_sign_documents: {
-		label: "Publish: Sign Documents",
-		subjectLine: "Sign your rental documents",
-		description:
-			"Review and sign the required rental documents so your trailer can be released.",
-	},
-	timeline_review_contract: {
-		label: "Publish: Review Contract",
-		subjectLine: "Review your contract details",
-		description:
-			"Review your rental contract details once the document packet is ready.",
-	},
-	timeline_pick_up_trailer: {
-		label: "Publish: Pick Up Trailer",
-		subjectLine: "Coordinate trailer pickup",
-		description:
-			"Coordinate pickup details once your documents and contract steps are complete.",
-	},
-};
 
 function dedupeById(items) {
 	const seen = new Set();
@@ -70,23 +52,46 @@ function emptyForm(tenantId = "") {
 		operationalStartDate: "",
 		endDate: "",
 		requestSummary: "",
-		requestedTrailerCount: "",
-		requestedTrailerType: "",
+		requestedTrailerTypes: [{ trailerType: "flatbed", quantity: "1" }],
 		trailerIds: [],
 	};
 }
 
-function buildCommunicationDraft(rental, application, actionKey = "general_update") {
-	const timelineConfig = TIMELINE_ACTIONS[actionKey] ?? null;
+function getRequestedTrailerTypesForForm(rental) {
+	const rows = Array.isArray(rental?.requestedTrailerTypes)
+		? rental.requestedTrailerTypes
+		: [];
+	const normalized = rows
+		.map((row) => ({
+			trailerType: getTrailerTypeFormValue(row?.trailerType) || "flatbed",
+			quantity:
+				row?.quantity === null || row?.quantity === undefined
+					? "1"
+					: String(row.quantity),
+		}))
+		.filter((row) => row.trailerType);
+
+	if (normalized.length) return normalized;
+
+	return [
+		{
+			trailerType: getTrailerTypeFormValue(rental?.requestedTrailerType) || "flatbed",
+			quantity:
+				rental?.requestedTrailerCount === null ||
+				rental?.requestedTrailerCount === undefined
+					? "1"
+					: String(rental.requestedTrailerCount),
+		},
+	];
+}
+
+function buildCommunicationDraft(rental, application) {
 	const companyName =
 		application?.companyName || rental?.tenantName || "this account";
 
 	return {
-		actionKey,
-		subjectLine: timelineConfig
-			? timelineConfig.subjectLine
-			: `Rental update for ${companyName}`,
-		message: timelineConfig ? timelineConfig.description : "",
+		subjectLine: `Rental update for ${companyName}`,
+		message: "",
 		stage: "current",
 		sendEmail: true,
 	};
@@ -128,7 +133,8 @@ export default function RentalManagementModal({
 	const [communicationLoading, setCommunicationLoading] = useState(false);
 	const [communicationError, setCommunicationError] = useState("");
 	const [communicationSuccess, setCommunicationSuccess] = useState("");
-	const [removingAssignmentId, setRemovingAssignmentId] = useState("");
+	const [destructiveLoading, setDestructiveLoading] = useState(false);
+	const [pendingDestructiveAction, setPendingDestructiveAction] = useState(null);
 
 	useEffect(() => {
 		if (!open) return;
@@ -159,9 +165,10 @@ export default function RentalManagementModal({
 				operationalStartDate: rental.operationalStartDate || "",
 				endDate: rental.endDate || "",
 				requestSummary: rental.requestSummary || "",
-				requestedTrailerCount: rental.requestedTrailerCount ?? "",
-				requestedTrailerType: rental.requestedTrailerType || "",
-				trailerIds: [],
+				requestedTrailerTypes: getRequestedTrailerTypesForForm(rental),
+				trailerIds: (rental.assignments ?? [])
+					.filter((assignment) => assignment.status === "active")
+					.map((assignment) => assignment.trailerId),
 			});
 			setCommunicationDraft(
 				buildCommunicationDraft(rental, rentalView?.application ?? rental.application ?? null)
@@ -195,9 +202,26 @@ export default function RentalManagementModal({
 		mode === "create"
 			? "Add Rental"
 			: getRentalRecordTitle(rental);
+	const approvedTermsLocked =
+		mode !== "create" &&
+		(rental?.recordKind === "agreement" ||
+			["awaiting_first_payment", "active", "past_due", "suspended"].includes(
+				rental?.status
+			));
 	const selectedTrailerSet = useMemo(
 		() => new Set(form.trailerIds),
 		[form.trailerIds]
+	);
+	const activeAssignments = useMemo(
+		() =>
+			(rental?.assignments ?? []).filter(
+				(assignment) => assignment.status === "active" && assignment.trailer
+			),
+		[rental?.assignments]
+	);
+	const activeAssignmentTrailerIds = useMemo(
+		() => new Set(activeAssignments.map((assignment) => assignment.trailerId)),
+		[activeAssignments]
 	);
 	const applicationDocuments = dedupeById([
 		...(Array.isArray(rental?.application?.documents)
@@ -212,11 +236,27 @@ export default function RentalManagementModal({
 		upcoming: [],
 		completed: [],
 	};
-	const communications = rentalView?.communications ?? EMPTY_ARRAY;
 	const filteredTrailerOptions = useMemo(() => {
 		const query = trailerSearch.trim().toLowerCase();
-		if (!query) return availableTrailers;
-		return availableTrailers.filter((trailer) =>
+		const assignedTrailerOptions = activeAssignments.map((assignment) => ({
+			...(assignment.trailer ?? {}),
+			id: assignment.trailerId,
+			assignmentId: assignment.id,
+			assignmentStatus: selectedTrailerSet.has(assignment.trailerId)
+				? "Assigned to this rental"
+				: "Will be unassigned on save",
+		}));
+		const availableTrailerOptions = availableTrailers
+			.filter((trailer) => !activeAssignmentTrailerIds.has(trailer.id))
+			.map((trailer) => ({
+				...trailer,
+				assignmentStatus: selectedTrailerSet.has(trailer.id)
+					? "Will be assigned on save"
+					: "Available",
+			}));
+		const trailerOptions = [...assignedTrailerOptions, ...availableTrailerOptions];
+		if (!query) return trailerOptions;
+		return trailerOptions.filter((trailer) =>
 			[
 				trailer.trailerCode,
 				trailer.trailerType,
@@ -226,7 +266,13 @@ export default function RentalManagementModal({
 				.filter(Boolean)
 				.some((value) => String(value).toLowerCase().includes(query))
 		);
-	}, [availableTrailers, trailerSearch]);
+	}, [
+		activeAssignmentTrailerIds,
+		activeAssignments,
+		availableTrailers,
+		selectedTrailerSet,
+		trailerSearch,
+	]);
 	const filteredTenantOptions = useMemo(() => {
 		const query = tenantSearch.trim().toLowerCase();
 		if (!query) return tenantOptions;
@@ -265,44 +311,95 @@ export default function RentalManagementModal({
 	}
 
 	function buildPayload(action = "save") {
-		return {
+		const payload = {
 			action,
 			tenantId: form.tenantId,
 			status: form.status,
 			billingStatus: form.billingStatus,
-			billingFrequency: form.billingFrequency,
 			rate: form.rate,
 			depositAmount: form.depositAmount,
-			contractStartDate: form.contractStartDate,
 			operationalStartDate: form.operationalStartDate,
 			endDate: form.endDate,
-			requestSummary: form.requestSummary,
-			requestedTrailerCount: form.requestedTrailerCount
-				? Number(form.requestedTrailerCount)
-				: undefined,
-			requestedTrailerType: form.requestedTrailerType,
 			trailerIds: form.trailerIds,
 		};
+
+		if (!approvedTermsLocked) {
+			payload.billingFrequency = form.billingFrequency;
+			payload.contractStartDate = form.contractStartDate;
+		}
+
+		if (mode === "create") {
+			payload.requestSummary = form.requestSummary;
+			payload.requestedTrailerTypes = serializeRequestedTrailerTypes(
+				form.requestedTrailerTypes
+			);
+		}
+
+		return payload;
+	}
+
+	function getAssignmentsToRemove() {
+		return activeAssignments.filter(
+			(assignment) => !selectedTrailerSet.has(assignment.trailerId)
+		);
+	}
+
+	async function submitRentalAction(action = "save", confirmed = false) {
+		const assignmentsToRemove = getAssignmentsToRemove();
+		if (["deny_request", "cancel_request"].includes(action) && !confirmed) {
+			setPendingDestructiveAction({
+				type: "resolve_request",
+				action,
+				assignments: assignmentsToRemove,
+			});
+			return;
+		}
+
+		if (assignmentsToRemove.length && !confirmed) {
+			setPendingDestructiveAction({
+				type: "save_with_unassignments",
+				action,
+				assignments: assignmentsToRemove,
+			});
+			return;
+		}
+
+		setDestructiveLoading(true);
+		setCommunicationError("");
+		try {
+			for (const assignment of assignmentsToRemove) {
+				const result = await onRemoveAssignment?.(assignment.id);
+				if (result?.error) {
+					setCommunicationError(result.error);
+					setDestructiveLoading(false);
+					setPendingDestructiveAction(null);
+					return;
+				}
+			}
+
+			await onSubmit(buildPayload(action));
+			setPendingDestructiveAction(null);
+		} finally {
+			setDestructiveLoading(false);
+		}
+	}
+
+	async function confirmDestructiveAction() {
+		if (!pendingDestructiveAction) return;
+		if (pendingDestructiveAction.type === "delete_rental") {
+			await onDelete();
+			setPendingDestructiveAction(null);
+			return;
+		}
+
+		await submitRentalAction(pendingDestructiveAction.action, true);
 	}
 
 	function updateCommunicationDraft(patch) {
-		setCommunicationDraft((current) => {
-			if (
-				typeof patch.actionKey === "string" &&
-				patch.actionKey !== current.actionKey
-			) {
-				return buildCommunicationDraft(
-					rental,
-					rentalView?.application ?? rental?.application ?? null,
-					patch.actionKey
-				);
-			}
-
-			return {
-				...current,
-				...patch,
-			};
-		});
+		setCommunicationDraft((current) => ({
+			...current,
+			...patch,
+		}));
 	}
 
 	async function handleSendCommunication() {
@@ -319,11 +416,11 @@ export default function RentalManagementModal({
 				tenantId: rental.tenantId,
 				rentalId: rental.id,
 				applicationId: rental.applicationId || null,
-				actionKey: communicationDraft.actionKey,
+				actionKey: "general_update",
 				subjectLine: communicationDraft.subjectLine,
 				message: communicationDraft.message,
-				stage: communicationDraft.stage,
-				sendEmail: communicationDraft.sendEmail,
+				stage: "current",
+				sendEmail: true,
 			});
 
 			if (result?.error) {
@@ -332,31 +429,11 @@ export default function RentalManagementModal({
 				return;
 			}
 
-			setCommunicationSuccess(
-				communicationDraft.actionKey === "general_update"
-					? "Update sent."
-					: "Timeline step published."
-			);
+			setCommunicationSuccess("Update sent.");
 			setCommunicationLoading(false);
 		} catch {
 			setCommunicationError("Failed to send update.");
 			setCommunicationLoading(false);
-		}
-	}
-
-	async function handleRemoveAssignment(assignmentId) {
-		if (!rental?.id || !onRemoveAssignment) {
-			return;
-		}
-
-		setRemovingAssignmentId(assignmentId);
-		try {
-			const result = await onRemoveAssignment(assignmentId);
-			if (result?.error) {
-				setCommunicationError(result.error);
-			}
-		} finally {
-			setRemovingAssignmentId("");
 		}
 	}
 
@@ -394,31 +471,49 @@ export default function RentalManagementModal({
 							<RentalHeaderCard rental={rental} />
 						) : null}
 
-						<div className="grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">
+						<div className="grid gap-5 xl:grid-cols-[minmax(0,0.95fr)_minmax(360px,1.05fr)]">
 							<Card>
-								<RentalEditableFields
-									form={form}
-									onFieldChange={updateField}
-									includeRentalStatus
-									includeBillingStatus
-									includeRate
-									includeDeposit
-									includeOperationalStart
-									noteLabel="Notes / Summary"
-									noteRows={6}
-								/>
+								<div className="space-y-4">
+									<div>
+										<h3 className="font-syne text-2xl font-bold text-neutral-950 dark:text-neutral-50">
+											Rental Terms
+										</h3>
+										<p className="mt-1 text-sm text-neutral-600 dark:text-neutral-400">
+											Manage operational state, billing state, pricing, and approved period details.
+										</p>
+									</div>
+									<RentalEditableFields
+										form={form}
+										onFieldChange={updateField}
+										includeRentalStatus
+										includeBillingStatus
+										includeRate
+										includeDeposit
+										includeBillingFrequency
+										includeOperationalStart
+										includeRequestDates
+										includeRequestedTrailers={mode === "create"}
+										includeNotes={mode === "create"}
+										disabledFields={
+											approvedTermsLocked
+												? {
+														billingFrequency: true,
+														contractStartDate: true,
+													}
+												: {}
+										}
+										noteLabel="Notes / Summary"
+										noteRows={5}
+									/>
+									{approvedTermsLocked ? (
+										<p className="text-xs text-neutral-500 dark:text-neutral-400">
+											Contract start and billing frequency are locked after approval. Operational start and end date remain editable.
+										</p>
+									) : null}
+								</div>
 							</Card>
 
 							<div className="space-y-4">
-								<RentalAssignmentsCard
-									assignments={rental?.assignments ?? EMPTY_ARRAY}
-									title="Assignments"
-									emptyTitle="No Assignments"
-									emptyMessage="No trailer assignments are attached to this rental."
-									onRemoveAssignment={rental ? handleRemoveAssignment : null}
-									removingAssignmentId={removingAssignmentId}
-								/>
-
 								<Card>
 									<div className="space-y-3">
 										<h3 className="font-syne text-2xl font-bold text-neutral-950 dark:text-neutral-50">
@@ -490,61 +585,24 @@ export default function RentalManagementModal({
 								</Card>
 
 								{showTrailerSelection ? (
-									<Card>
-										<div className="space-y-3">
-											<h3 className="font-syne text-2xl font-bold text-neutral-950 dark:text-neutral-50">
-												{showTrailerApproval
-													? "Select Trailers for Approval"
-													: "Assign Trailers"}
-											</h3>
-											<p className="text-sm text-neutral-600 dark:text-neutral-400">
-												{showTrailerApproval
-													? "Choose the available trailers that should be merged into the parent rental."
-													: "Choose any available trailers that should be linked as soon as this rental is saved."}
-											</p>
-											<SearchInput
-												value={trailerSearch}
-												onChange={setTrailerSearch}
-												placeholder="Search by code, type, plate, or VIN"
-												className="min-w-0"
-											/>
-											{availableTrailers.length ? (
-												<div className="space-y-3">
-													{filteredTrailerOptions.length ? (
-														filteredTrailerOptions.map((trailer) => (
-															<label
-																key={trailer.id}
-																className="flex items-center gap-3 rounded-2xl border border-(--border-soft) bg-white/80 px-4 py-3 text-sm text-neutral-800 dark:bg-neutral-950/60 dark:text-neutral-100"
-															>
-																<input
-																	type="checkbox"
-																	checked={selectedTrailerSet.has(trailer.id)}
-																	onChange={() => toggleTrailer(trailer.id)}
-																	className="h-4 w-4 rounded border-neutral-300"
-																/>
-																<div>
-																	<p className="font-semibold">
-																		{trailer.trailerCode || trailer.vin || trailer.id}
-																	</p>
-																	<p className="text-neutral-600 dark:text-neutral-400">
-																		{trailer.trailerType || "Trailer"} | {trailer.plateNumber || "No plate"}
-																	</p>
-																</div>
-															</label>
-														))
-													) : (
-														<p className="text-sm text-neutral-600 dark:text-neutral-400">
-															No available trailers match this search.
-														</p>
-													)}
-												</div>
-											) : (
-												<p className="text-sm text-neutral-600 dark:text-neutral-400">
-													No currently available trailers are ready for assignment.
-												</p>
-											)}
-										</div>
-									</Card>
+									<RentalTrailerChecklist
+										title={
+											showTrailerApproval
+												? "Select Trailers for Approval"
+												: "Trailers"
+										}
+										description={
+											showTrailerApproval
+												? "Checked trailers will be merged into the parent rental. Unchecked assigned trailers will be removed after confirmation when you save."
+												: "Checked trailers are assigned to this rental. Uncheck an assigned trailer and save to unassign it after confirmation."
+										}
+										searchValue={trailerSearch}
+										onSearchChange={setTrailerSearch}
+										trailers={filteredTrailerOptions}
+										selectedTrailerIds={form.trailerIds}
+										onToggleTrailer={toggleTrailer}
+										emptyMessage="No trailers match this search."
+									/>
 								) : null}
 
 								{rental ? (
@@ -566,10 +624,6 @@ export default function RentalManagementModal({
 
 						{rentalView ? (
 							<div className="space-y-4">
-								<div className="grid gap-4 xl:grid-cols-[1fr_1fr]">
-									<RentalSnapshotCard rental={rental} />
-									<RentalBillingCard rental={rental} />
-								</div>
 								<RentalTimelineGrid timeline={timeline} />
 								{rental && onSendCommunication ? (
 									<Card>
@@ -583,23 +637,6 @@ export default function RentalManagementModal({
 												</p>
 											</div>
 
-											<select
-												value={communicationDraft.actionKey}
-												onChange={(event) =>
-													updateCommunicationDraft({
-														actionKey: event.target.value,
-													})
-												}
-												className="w-full rounded-xl border border-(--border-soft) bg-white px-4 py-3 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-(--branding-700) dark:bg-neutral-950/50 dark:text-neutral-100"
-											>
-												<option value="general_update">General Rental Update</option>
-												{Object.entries(TIMELINE_ACTIONS).map(([value, config]) => (
-													<option key={value} value={value}>
-														{config.label}
-													</option>
-												))}
-											</select>
-
 											<input
 												type="text"
 												value={communicationDraft.subjectLine}
@@ -611,42 +648,6 @@ export default function RentalManagementModal({
 												className="w-full rounded-xl border border-(--border-soft) bg-white px-4 py-3 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-(--branding-700) dark:bg-neutral-950/50 dark:text-neutral-100"
 												placeholder="Short update subject"
 											/>
-
-											{communicationDraft.actionKey !== "general_update" ? (
-												<>
-													<select
-														value={communicationDraft.stage}
-														onChange={(event) =>
-															updateCommunicationDraft({
-																stage: event.target.value,
-															})
-														}
-														className="w-full rounded-xl border border-(--border-soft) bg-white px-4 py-3 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-(--branding-700) dark:bg-neutral-950/50 dark:text-neutral-100"
-													>
-														{TIMELINE_STAGE_VALUES.map((stage) => (
-															<option key={stage} value={stage}>
-																{stage
-																	.split("_")
-																	.map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-																	.join(" ")}
-															</option>
-														))}
-													</select>
-													<label className="flex items-center gap-3 rounded-xl border border-(--border-soft) px-4 py-3 text-sm text-neutral-700 dark:text-neutral-300">
-														<input
-															type="checkbox"
-															checked={Boolean(communicationDraft.sendEmail)}
-															onChange={(event) =>
-																updateCommunicationDraft({
-																	sendEmail: event.target.checked,
-																})
-															}
-															className="h-4 w-4 rounded border-(--border-soft)"
-														/>
-														Email the tenant when this timeline step is published
-													</label>
-												</>
-											) : null}
 
 											<textarea
 												value={communicationDraft.message}
@@ -662,9 +663,7 @@ export default function RentalManagementModal({
 
 											<div className="flex flex-wrap items-center justify-between gap-3">
 												<p className="text-xs text-neutral-500 dark:text-neutral-400">
-													{communicationDraft.actionKey === "general_update"
-														? "This sends a direct rental update without changing workflow state."
-														: "This publishes a rental-scoped timeline step and can notify the tenant immediately."}
+													This sends a direct rental update without changing workflow state.
 												</p>
 												<ActionButton
 													type="button"
@@ -691,7 +690,7 @@ export default function RentalManagementModal({
 										</div>
 									</Card>
 								) : null}
-								<RentalCommunicationsCard communications={communications} />
+								<RentalBillingCard rental={rental} />
 							</div>
 						) : null}
 
@@ -700,10 +699,10 @@ export default function RentalManagementModal({
 								<ActionButton
 									type="button"
 									tone="primary"
-									onClick={() => onSubmit(buildPayload("save"))}
-									disabled={submitting || !form.tenantId}
+									onClick={() => submitRentalAction("save")}
+									disabled={submitting || destructiveLoading || !form.tenantId}
 								>
-									{submitting ? (
+									{submitting || destructiveLoading ? (
 										<ArrowPathIcon className="h-5 w-5 animate-spin" aria-hidden="true" />
 									) : (
 										<CheckCircleIcon className="h-5 w-5" aria-hidden="true" />
@@ -714,8 +713,8 @@ export default function RentalManagementModal({
 									<ActionButton
 										type="button"
 										tone="positive"
-										onClick={() => onSubmit(buildPayload(proposalAction))}
-										disabled={submitting}
+										onClick={() => submitRentalAction(proposalAction)}
+										disabled={submitting || destructiveLoading}
 									>
 										{proposalLabel}
 									</ActionButton>
@@ -724,8 +723,8 @@ export default function RentalManagementModal({
 									<ActionButton
 										type="button"
 										tone="danger"
-										onClick={() => onSubmit(buildPayload("deny_request"))}
-										disabled={submitting}
+										onClick={() => submitRentalAction("deny_request")}
+										disabled={submitting || destructiveLoading}
 									>
 										Decline Draft
 									</ActionButton>
@@ -736,7 +735,11 @@ export default function RentalManagementModal({
 								<ActionButton
 									type="button"
 									tone="danger"
-									onClick={onDelete}
+									onClick={() =>
+										setPendingDestructiveAction({
+											type: "delete_rental",
+										})
+									}
 									disabled={deleting}
 								>
 									{deleting ? (
@@ -752,6 +755,34 @@ export default function RentalManagementModal({
 					</>
 				)}
 			</div>
+
+			<ConfirmActionModal
+				open={Boolean(pendingDestructiveAction)}
+				onClose={() => setPendingDestructiveAction(null)}
+				onConfirm={confirmDestructiveAction}
+				title={
+					pendingDestructiveAction?.type === "delete_rental"
+						? "Delete this draft?"
+						: pendingDestructiveAction?.type === "resolve_request"
+							? "Decline this draft?"
+						: "Unassign selected trailers?"
+				}
+				message={
+					pendingDestructiveAction?.type === "delete_rental"
+						? "This will permanently delete this unresolved draft request. This is only safe for drafts that have not entered the operational lifecycle."
+						: pendingDestructiveAction?.type === "resolve_request"
+							? "This will mark the rental request as declined or cancelled and release any selected trailer changes. Use this only when you are ready to close the request."
+						: `${pendingDestructiveAction?.assignments?.length ?? 0} assigned trailer(s) will be removed from this rental and returned to available inventory before the rental is saved.`
+				}
+				confirmLabel={
+					pendingDestructiveAction?.type === "delete_rental"
+						? "Delete Draft"
+						: pendingDestructiveAction?.type === "resolve_request"
+							? "Decline Draft"
+						: "Unassign and Save"
+				}
+				loading={deleting || destructiveLoading}
+			/>
 		</ScreenModal>
 	);
 }

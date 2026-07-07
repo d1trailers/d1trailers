@@ -1,3 +1,5 @@
+import { normalizeTrailerType } from "@/lib/trailerTypes";
+
 function dedupeById(items) {
 	const seen = new Set();
 	return items.filter((item) => {
@@ -60,11 +62,41 @@ function normalizeTrailer(trailer) {
 	return {
 		id: trailer.id,
 		trailerCode: trailer.trailer_code,
-		trailerType: trailer.trailer_type,
+		trailerType: normalizeTrailerType(trailer.trailer_type) ?? trailer.trailer_type,
 		plateNumber: trailer.plate_number,
 		vin: trailer.vin,
 		status: trailer.status,
 	};
+}
+
+function normalizeRequestedTrailerTypes(rental) {
+	const rows = Array.isArray(rental.requested_trailer_types)
+		? rental.requested_trailer_types
+		: Array.isArray(rental.requestedTrailerTypes)
+			? rental.requestedTrailerTypes
+			: [];
+	const normalized = rows
+		.map((row) => ({
+			trailerType:
+				normalizeTrailerType(row.trailer_type ?? row.trailerType) ??
+				(row.trailer_type ?? row.trailerType),
+			quantity: parseNumericValue(row.quantity) ?? 1,
+		}))
+		.filter((row) => row.trailerType && row.quantity > 0);
+
+	if (normalized.length) return normalized;
+
+	const fallbackType =
+		normalizeTrailerType(rental.requested_trailer_type) ??
+		rental.requested_trailer_type;
+	if (!fallbackType) return [];
+
+	return [
+		{
+			trailerType: fallbackType,
+			quantity: parseNumericValue(rental.requested_trailer_count) ?? 1,
+		},
+	];
 }
 
 function parseNumericValue(value) {
@@ -131,6 +163,8 @@ function normalizeRental(rental, tenantName) {
 				trailer: normalizeTrailer(assignment.trailer),
 		  }))
 		: [];
+	const requestedTrailerTypes = normalizeRequestedTrailerTypes(rental);
+	const primaryRequestedTrailerType = requestedTrailerTypes[0] ?? null;
 
 	return {
 		id: rental.id,
@@ -148,8 +182,13 @@ function normalizeRental(rental, tenantName) {
 		recordKind: rental.record_kind,
 		requestKind: rental.request_kind,
 		parentRentalId: rental.parent_rental_id,
-		requestedTrailerCount: rental.requested_trailer_count,
-		requestedTrailerType: rental.requested_trailer_type,
+		requestedTrailerTypes,
+		requestedTrailerCount:
+			primaryRequestedTrailerType?.quantity ?? rental.requested_trailer_count,
+		requestedTrailerType:
+			primaryRequestedTrailerType?.trailerType ??
+			normalizeTrailerType(rental.requested_trailer_type) ??
+			rental.requested_trailer_type,
 		requestSummary: rental.request_summary,
 		resolvedAt: rental.resolved_at,
 		requestOutcome: rental.request_outcome,

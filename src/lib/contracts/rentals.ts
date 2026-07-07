@@ -1,4 +1,8 @@
 import { z } from "zod";
+import {
+	TRAILER_TYPE_VALUES,
+	normalizeTrailerType,
+} from "@/lib/trailerTypes";
 
 export const BILLING_FREQUENCY_VALUES = ["weekly", "monthly", "yearly"] as const;
 export const RENTAL_STATUS_VALUES = [
@@ -51,6 +55,7 @@ export type BillingFrequency = (typeof BILLING_FREQUENCY_VALUES)[number];
 export type RentalStatus = (typeof RENTAL_STATUS_VALUES)[number];
 export type BillingStatus = (typeof BILLING_STATUS_VALUES)[number];
 export type TrailerStatus = (typeof TRAILER_STATUS_VALUES)[number];
+export type TrailerType = (typeof TRAILER_TYPE_VALUES)[number];
 export type RentalRecordKind = (typeof RENTAL_RECORD_KIND_VALUES)[number];
 export type RentalRequestKind = (typeof RENTAL_REQUEST_KIND_VALUES)[number];
 export type RentalRequestOutcome = (typeof RENTAL_REQUEST_OUTCOME_VALUES)[number];
@@ -60,12 +65,34 @@ export const billingFrequencySchema = z.enum(BILLING_FREQUENCY_VALUES);
 export const rentalStatusSchema = z.enum(RENTAL_STATUS_VALUES);
 export const billingStatusSchema = z.enum(BILLING_STATUS_VALUES);
 export const trailerStatusSchema = z.enum(TRAILER_STATUS_VALUES);
+export const trailerTypeSchema = z.preprocess(
+	(value) => normalizeTrailerType(value) ?? value,
+	z.enum(TRAILER_TYPE_VALUES),
+);
+const requestedTrailerTypeLineSchema = z.object({
+	trailerType: trailerTypeSchema,
+	quantity: z.coerce.number().int().positive("Trailer quantity must be at least 1."),
+});
+const requestedTrailerTypesSchema = z
+	.array(requestedTrailerTypeLineSchema)
+	.min(1, "Add at least one requested trailer type.")
+	.transform((items) => {
+		const counts = new Map<string, number>();
+		for (const item of items) {
+			counts.set(item.trailerType, (counts.get(item.trailerType) ?? 0) + item.quantity);
+		}
+		return [...counts.entries()].map(([trailerType, quantity]) => ({
+			trailerType,
+			quantity,
+		}));
+	});
 export const rentalRecordKindSchema = z.enum(RENTAL_RECORD_KIND_VALUES);
 export const rentalRequestKindSchema = z.enum(RENTAL_REQUEST_KIND_VALUES);
 export const rentalRequestOutcomeSchema = z.enum(RENTAL_REQUEST_OUTCOME_VALUES);
 export const tenantRequestKindSchema = z.enum(TENANT_REQUEST_KIND_VALUES);
 
 const isoDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD.");
+const optionalDateSchema = isoDateSchema.optional().or(z.literal("")).transform((value) => value || null);
 const optionalCurrencySchema = z
 	.union([z.number(), z.string()])
 	.transform((value) => {
@@ -77,17 +104,43 @@ const optionalCurrencySchema = z
 		message: "Enter a valid amount.",
 	});
 
+function compareIsoDates(left?: string | null, right?: string | null) {
+	if (!left || !right) return 0;
+	return left.localeCompare(right);
+}
+
+function dateOrderMessage(path: string[], message: string) {
+	return {
+		path,
+		message,
+	};
+}
+
 export const rentalRequestCreateSchema = z
 	.object({
 		requestType: tenantRequestKindSchema,
 		parentRentalId: z.string().uuid().optional().or(z.literal("")).transform((value) => value || null),
-		requestedTrailerCount: z.coerce.number().int().positive("Trailer count must be at least 1."),
-		requestedTrailerType: z.string().trim().min(1, "Trailer type is required.").max(120),
+		requestedTrailerTypes: requestedTrailerTypesSchema,
 		contractStartDate: isoDateSchema,
+		operationalStartDate: isoDateSchema,
 		endDate: isoDateSchema,
 		billingFrequency: billingFrequencySchema.default("monthly"),
 		requestSummary: z.string().trim().max(2000).optional().default(""),
-	});
+	})
+	.refine(
+		(value) => compareIsoDates(value.contractStartDate, value.operationalStartDate) <= 0,
+		dateOrderMessage(
+			["operationalStartDate"],
+			"Operational start date must be on or after the contract start date.",
+		),
+	)
+	.refine(
+		(value) => compareIsoDates(value.operationalStartDate, value.endDate) <= 0,
+		dateOrderMessage(
+			["endDate"],
+			"End date must be on or after the operational start date.",
+		),
+	);
 
 export const adminRentalCreateSchema = z.object({
 	tenantId: z.string().uuid(),
@@ -96,14 +149,13 @@ export const adminRentalCreateSchema = z.object({
 	billingFrequency: billingFrequencySchema.default("monthly"),
 	rate: optionalCurrencySchema.optional().default(null),
 	depositAmount: optionalCurrencySchema.optional().default(null),
-	contractStartDate: isoDateSchema.optional().or(z.literal("")).transform((value) => value || null),
-	operationalStartDate: isoDateSchema.optional().or(z.literal("")).transform((value) => value || null),
-	endDate: isoDateSchema.optional().or(z.literal("")).transform((value) => value || null),
+	contractStartDate: optionalDateSchema,
+	operationalStartDate: optionalDateSchema,
+	endDate: optionalDateSchema,
 	requestSummary: z.string().trim().max(2000).optional().default(""),
-	requestedTrailerCount: z
-		.union([z.coerce.number().int().positive(), z.literal(""), z.null(), z.undefined()])
-		.transform((value) => (typeof value === "number" ? value : null)),
-	requestedTrailerType: z.string().trim().max(120).optional().default(""),
+	requestedTrailerTypes: requestedTrailerTypesSchema.optional().default([
+		{ trailerType: "flatbed", quantity: 1 },
+	]),
 	trailerIds: z.array(z.string().uuid()).optional().default([]),
 });
 
@@ -124,31 +176,41 @@ export const adminRentalUpdateSchema = z.object({
 	billingFrequency: billingFrequencySchema.optional(),
 	rate: optionalCurrencySchema.optional(),
 	depositAmount: optionalCurrencySchema.optional(),
-	contractStartDate: isoDateSchema.optional().or(z.literal("")).transform((value) => value || null),
-	operationalStartDate: isoDateSchema.optional().or(z.literal("")).transform((value) => value || null),
-	endDate: isoDateSchema.optional().or(z.literal("")).transform((value) => value || null),
+	contractStartDate: optionalDateSchema,
+	operationalStartDate: optionalDateSchema,
+	endDate: optionalDateSchema,
 	requestSummary: z.string().trim().max(2000).optional(),
-	requestedTrailerCount: z
-		.union([z.coerce.number().int().positive(), z.literal(""), z.undefined()])
-		.transform((value) => (typeof value === "number" ? value : undefined)),
-	requestedTrailerType: z.string().trim().max(120).optional(),
+	requestedTrailerTypes: requestedTrailerTypesSchema.optional(),
 	trailerIds: z.array(z.string().uuid()).optional().default([]),
 });
 
-export const tenantRentalModificationSchema = z.object({
-	billingFrequency: billingFrequencySchema.optional(),
-	contractStartDate: isoDateSchema.optional().or(z.literal("")).transform((value) => value || null),
-	endDate: isoDateSchema.optional().or(z.literal("")).transform((value) => value || null),
-	requestedTrailerCount: z
-		.union([z.coerce.number().int().positive(), z.literal(""), z.null(), z.undefined()])
-		.transform((value) => (typeof value === "number" ? value : null)),
-	requestedTrailerType: z.string().trim().max(120).optional().default(""),
-	requestSummary: z.string().trim().max(2000).optional().default(""),
-});
+export const tenantRentalModificationSchema = z
+	.object({
+		billingFrequency: billingFrequencySchema.optional(),
+		contractStartDate: optionalDateSchema,
+		operationalStartDate: optionalDateSchema,
+		endDate: optionalDateSchema,
+		requestedTrailerTypes: requestedTrailerTypesSchema,
+		requestSummary: z.string().trim().max(2000).optional().default(""),
+	})
+	.refine(
+		(value) => compareIsoDates(value.contractStartDate, value.operationalStartDate) <= 0,
+		dateOrderMessage(
+			["operationalStartDate"],
+			"Operational start date must be on or after the contract start date.",
+		),
+	)
+	.refine(
+		(value) => compareIsoDates(value.operationalStartDate, value.endDate) <= 0,
+		dateOrderMessage(
+			["endDate"],
+			"End date must be on or after the operational start date.",
+		),
+	);
 
 export const adminTrailerCreateSchema = z.object({
 	trailerCode: z.string().trim().max(80).optional().default(""),
-	trailerType: z.string().trim().min(1, "Trailer type is required.").max(120),
+	trailerType: trailerTypeSchema,
 	plateNumber: z.string().trim().max(40).optional().default(""),
 	vin: z.string().trim().max(80).optional().default(""),
 	status: trailerStatusSchema.default("available"),
@@ -157,7 +219,7 @@ export const adminTrailerCreateSchema = z.object({
 
 export const adminTrailerUpdateSchema = z.object({
 	trailerCode: z.string().trim().max(80).optional(),
-	trailerType: z.string().trim().min(1).max(120).optional(),
+	trailerType: trailerTypeSchema.optional(),
 	plateNumber: z.string().trim().max(40).optional(),
 	vin: z.string().trim().max(80).optional(),
 	status: trailerStatusSchema.optional(),

@@ -48,7 +48,9 @@ export function buildApplicationIntakeSummary(application) {
 				["Federal Tax ID (EIN)", application.ein],
 				["MC Number", application.mcNumber],
 				["USDOT Number", application.usdot],
-				["Requested Rental Duration", application.rentalDuration],
+				["Requested Rental Start", application.requestedRentalStartDate],
+				["Requested Rental End", application.requestedRentalEndDate],
+				["Requested Rental Range", application.rentalDuration],
 			],
 		},
 		{

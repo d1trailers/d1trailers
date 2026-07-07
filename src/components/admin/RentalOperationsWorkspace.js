@@ -6,6 +6,7 @@ import ActionButton from "@/components/ui/ActionButton";
 import RentalManagementModal from "@/components/admin/RentalManagementModal";
 import useAdminRentalsManager from "@/components/admin/useAdminRentalsManager";
 import RentalsSection from "@/components/portal/RentalsSection";
+import { buildRentalTrailerTypeSummary } from "@/lib/trailerTypes";
 
 const GROUP_CONFIG = {
 	drafts: {
@@ -93,7 +94,7 @@ export default function RentalOperationsWorkspace() {
 				rental.billingStatus,
 				rental.recordKind,
 				rental.requestKind,
-				rental.requestedTrailerType,
+				...buildRentalTrailerTypeSummary(rental).map((item) => item.label),
 			]
 				.filter(Boolean)
 				.some((value) => String(value).toLowerCase().includes(query)),
@@ -136,6 +137,7 @@ export default function RentalOperationsWorkspace() {
 				groupedRecords={groupedRentals}
 				onOpenRecord={openEditModal}
 				showTenantName
+				showTrailerTypeSummary
 				emptyMessage="No rental records match this search."
 				loadingMessage="Loading rental operations..."
 			/>

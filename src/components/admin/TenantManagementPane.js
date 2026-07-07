@@ -11,6 +11,8 @@ import {
 import Card from "@/components/ui/Card";
 import StatusBadge from "@/components/admin/StatusBadge";
 import ActionButton from "@/components/ui/ActionButton";
+import { buildRentalTrailerTypeSummary } from "@/lib/trailerTypes";
+import { prettifyEnumLabel } from "@/lib/displayLabels";
 
 const TAB_ITEMS = [
 	{ id: "rentals", label: "Rentals", icon: RectangleStackIcon },
@@ -32,11 +34,7 @@ function formatDateOnly(value) {
 }
 
 function formatLabel(value) {
-	if (!value) return "Unknown";
-	return String(value)
-		.split("_")
-		.map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-		.join(" ");
+	return prettifyEnumLabel(value);
 }
 
 function dedupeById(items) {
@@ -67,6 +65,13 @@ function getRentalTitle(rental) {
 		return "Rental Draft";
 	}
 	return "Rental Agreement";
+}
+
+function formatRentalTrailerSummary(rental) {
+	const summary = buildRentalTrailerTypeSummary(rental);
+	return summary.length
+		? summary.map((item) => `${item.label} x ${item.count}`).join(", ")
+		: "Trailer type pending";
 }
 
 function EmptySection({ title, message }) {
@@ -301,7 +306,7 @@ export default function TenantManagementPane({
 													{getRentalTitle(rentalView.rental)}
 												</p>
 												<p className="text-sm text-neutral-600 dark:text-neutral-400">
-													{rentalView.application?.company_name || detail.tenant.display_name} | {rentalView.rental.requested_trailer_type || "Trailer type pending"}
+													{rentalView.application?.company_name || detail.tenant.display_name} | {formatRentalTrailerSummary(rentalView.rental)}
 												</p>
 												<div className="flex flex-wrap gap-4 text-xs text-neutral-500 dark:text-neutral-400">
 													<span>Start {formatDateOnly(rentalView.rental.contract_start_date)}</span>
@@ -374,7 +379,7 @@ export default function TenantManagementPane({
 												{trailer.trailer_code || trailer.vin || trailer.id}
 											</p>
 											<p className="text-sm text-neutral-600 dark:text-neutral-400">
-												{trailer.trailer_type || "Trailer"} | {trailer.plate_number || "No plate"}
+												{formatTrailerType(trailer.trailer_type)} | {trailer.plate_number || "No plate"}
 											</p>
 											<p className="text-xs text-neutral-500 dark:text-neutral-400">
 												{trailer.linkedRentals.length} linked rental(s)

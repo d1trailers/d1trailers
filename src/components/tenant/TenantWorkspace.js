@@ -6,10 +6,12 @@ import StatusBadge from "@/components/admin/StatusBadge";
 import TenantRentalRequestPanel from "@/components/rentals/TenantRentalRequestPanel";
 import AccountUsersManager from "@/components/account/AccountUsersManager";
 import TenantRentalModal from "@/components/tenant/TenantRentalModal";
+import TenantBillingModal from "@/components/tenant/TenantBillingModal";
 import { buildTenantRentalViews } from "@/lib/viewmodels/tenantWorkspace";
 import RentalsSection from "@/components/portal/RentalsSection";
 import BillingSection from "@/components/portal/BillingSection";
 import SectionHeaderCard from "@/components/portal/SectionHeaderCard";
+import { buildRentalTrailerTypeSummary } from "@/lib/trailerTypes";
 
 function formatDateTime(value) {
 	if (!value) return "Date pending";
@@ -92,10 +94,17 @@ export default function TenantWorkspace({
 	const [rentalSearch, setRentalSearch] = useState("");
 	const [billingSearch, setBillingSearch] = useState("");
 	const [selectedRentalId, setSelectedRentalId] = useState("");
+	const [selectedBillingRentalId, setSelectedBillingRentalId] = useState("");
 	const rentalViews = useMemo(() => buildTenantRentalViews(workspaceData), [workspaceData]);
 	const selectedRentalView = useMemo(
 		() => rentalViews.find((view) => view.rental.id === selectedRentalId) ?? null,
 		[rentalViews, selectedRentalId]
+	);
+	const selectedBillingRentalView = useMemo(
+		() =>
+			rentalViews.find((view) => view.rental.id === selectedBillingRentalId) ??
+			null,
+		[rentalViews, selectedBillingRentalId]
 	);
 	const pendingRentalIds = useMemo(
 		() =>
@@ -116,7 +125,7 @@ export default function TenantWorkspace({
 				view.rental.status,
 				view.rental.billingStatus,
 				view.rental.requestKind,
-				view.rental.requestedTrailerType,
+				...buildRentalTrailerTypeSummary(view.rental).map((item) => item.label),
 				view.rental.requestSummary,
 				getRentalListLabel(view),
 			]
@@ -333,6 +342,7 @@ export default function TenantWorkspace({
 						error=""
 						records={canSeeRentals ? filteredRentals.map((view) => view.rental) : []}
 						onOpenRecord={setSelectedRentalId}
+						showTrailerTypeSummary
 						emptyMessage={
 							canSeeRentals
 								? "No rentals match this search."
@@ -356,7 +366,7 @@ export default function TenantWorkspace({
 						loading={false}
 						error=""
 						records={canViewBilling ? filteredBilling.map((view) => view.rental) : []}
-						onOpenRecord={setSelectedRentalId}
+						onOpenRecord={setSelectedBillingRentalId}
 						emptyMessage={
 							canViewBilling
 								? "No billing records match this search."
@@ -391,6 +401,11 @@ export default function TenantWorkspace({
 				canViewDocuments={canViewDocuments}
 				canViewTimeline={canViewTimeline}
 				canManageRentals={canManageRentals}
+			/>
+			<TenantBillingModal
+				open={Boolean(selectedBillingRentalId)}
+				onClose={() => setSelectedBillingRentalId("")}
+				rentalView={selectedBillingRentalView}
 			/>
 		</>
 	);

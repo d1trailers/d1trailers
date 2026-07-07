@@ -1,5 +1,6 @@
 import { forwardRef } from "react";
 import { ChevronDownIcon } from "@heroicons/react/20/solid";
+import { prettifyEnumLabel } from "@/lib/displayLabels";
 
 const StatusBadge = forwardRef(function StatusBadge(
 	{
@@ -13,6 +14,7 @@ const StatusBadge = forwardRef(function StatusBadge(
 	ref,
 ) {
 	const value = status || "Unknown";
+	const displayValue = prettifyEnumLabel(value);
 	const toneClass = getStatusClassName(value);
 	const Component = asButton ? "button" : "span";
 
@@ -24,7 +26,7 @@ const StatusBadge = forwardRef(function StatusBadge(
 				asButton ? "cursor-pointer transition-opacity hover:opacity-90" : ""
 			} ${className}`}
 		>
-			<span>{value}</span>
+			<span>{displayValue}</span>
 			{showChevron ? <ChevronDownIcon aria-hidden="true" className="size-3.5" /> : null}
 			{children}
 		</Component>

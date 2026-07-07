@@ -3,11 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
-	BuildingOffice2Icon,
 	ChevronRightIcon,
-	MagnifyingGlassIcon,
-	SparklesIcon,
-	UsersIcon,
 } from "@heroicons/react/24/outline";
 import Card from "@/components/ui/Card";
 import StateCard from "@/components/admin/StateCard";
@@ -17,27 +13,25 @@ import TenantManagementModal from "@/components/admin/TenantManagementModal";
 import RentalManagementModal from "@/components/admin/RentalManagementModal";
 import TrailerManagementModal from "@/components/admin/TrailerManagementModal";
 import { JOURNEY_ITEM_KEYS } from "@/lib/contracts/journey";
+import SectionHeaderCard from "@/components/portal/SectionHeaderCard";
+import SearchInput from "@/components/portal/SearchInput";
 
 const GROUP_CONFIG = {
 	active: {
 		label: "Active Accounts",
 		description: "Tenant accounts with at least one live agreement.",
-		icon: BuildingOffice2Icon,
 	},
 	suspended: {
 		label: "Suspended Accounts",
 		description: "Tenant accounts currently suspended because of agreement-level billing issues.",
-		icon: UsersIcon,
 	},
 	stale: {
 		label: "Stale Accounts",
 		description: "Tenant accounts with no live agreements. Drafts and negotiations still live on their rentals.",
-		icon: SparklesIcon,
 	},
 	other: {
 		label: "Other",
 		description: "Accounts outside the standard workflow buckets.",
-		icon: BuildingOffice2Icon,
 	},
 };
 
@@ -48,6 +42,47 @@ function formatDate(value) {
 	const date = new Date(value);
 	if (Number.isNaN(date.getTime())) return "-";
 	return date.toLocaleString();
+}
+
+function TenantRecordCard({ tenant, onClick }) {
+	return (
+		<button
+			type="button"
+			onClick={() => onClick(tenant.id)}
+			className="w-full rounded-2xl border border-(--border-soft) bg-white/80 p-4 text-left transition hover:border-(--branding-700) hover:bg-white dark:bg-neutral-950/60"
+		>
+			<div className="flex flex-wrap items-start justify-between gap-3">
+				<div>
+					<p className="font-semibold text-neutral-950 dark:text-neutral-50">
+						{tenant.displayName}
+					</p>
+					<p className="text-sm text-neutral-600 dark:text-neutral-400">
+						Account Owner: {tenant.primaryEmail}
+					</p>
+					<p className="mt-2 text-xs text-neutral-500 dark:text-neutral-400">
+						{tenant.primaryPhone || "No phone on file"} | Updated {formatDate(tenant.updatedAt)}
+					</p>
+				</div>
+				<div className="flex flex-wrap justify-end gap-2">
+					<StatusBadge status={tenant.status} />
+					{tenant.latestApplication ? (
+						<StatusBadge status={tenant.latestApplication.status} />
+					) : null}
+				</div>
+			</div>
+			<div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-xs text-neutral-500 dark:text-neutral-400">
+				<div className="flex flex-wrap gap-3">
+					<span>{tenant.rentalCount} rental(s)</span>
+					<span>{tenant.communicationCount} communication(s)</span>
+					<span>{tenant.pendingTimelineCount} pending action(s)</span>
+				</div>
+				<span className="inline-flex items-center gap-1 font-semibold text-(--branding-700)">
+					Open management
+					<ChevronRightIcon className="h-4 w-4" aria-hidden="true" />
+				</span>
+			</div>
+		</button>
+	);
 }
 
 export default function TenantManagementWorkspace() {
@@ -602,99 +637,50 @@ export default function TenantManagementWorkspace() {
 	return (
 		<>
 			<div className="space-y-6">
-				<Card>
-					<div className="space-y-4">
-						<div>
-							<p className="text-xs uppercase tracking-[0.14em] text-neutral-500 dark:text-neutral-400">
-								Management
-							</p>
-							<h2 className="mt-2 font-syne text-3xl font-bold text-neutral-950 dark:text-neutral-50">
-								Tenant Accounts
-							</h2>
-						</div>
-						<label className="relative block max-w-xl">
-							<MagnifyingGlassIcon className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-neutral-400" aria-hidden="true" />
-							<input
-								type="text"
-								value={searchQuery}
-								onChange={(event) => setSearchQuery(event.target.value)}
-								className="w-full rounded-2xl border border-(--border-soft) bg-white py-3 pl-12 pr-4 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-(--branding-700) dark:bg-neutral-950/50 dark:text-neutral-100"
-								placeholder="Search by company, account owner email, phone, or status"
-							/>
-						</label>
-					</div>
-				</Card>
+				<SectionHeaderCard
+					eyebrow="Management"
+					title="Tenant Accounts"
+					search={
+						<SearchInput
+							value={searchQuery}
+							onChange={setSearchQuery}
+							placeholder="Search by company, account owner email, phone, or status"
+						/>
+					}
+				/>
 
-				<div className="grid grid-cols-1 gap-4">
+				<div className="flex w-full flex-col gap-4">
 					{Object.entries(GROUP_CONFIG).map(([groupKey, config]) => {
 						const items = groupedTenants[groupKey] || [];
-						const Icon = config.icon;
 						return (
 							<Card key={groupKey} className="h-full">
 								<div className="space-y-4">
-									<div className="flex items-start gap-3">
-										<div className="rounded-2xl bg-red-50 p-3 text-(--branding-700) dark:bg-red-950/20">
-											<Icon className="h-5 w-5" aria-hidden="true" />
-										</div>
-										<div>
-											<div className="flex flex-wrap items-center gap-3">
-												<h3 className="font-syne text-xl font-bold text-neutral-950 dark:text-neutral-50">
-													{config.label}
-												</h3>
-												<StatusBadge status={`${items.length} total`} />
-											</div>
-											<p className="mt-1 text-sm text-neutral-600 dark:text-neutral-400">
-												{config.description}
+									<div>
+										<div className="flex flex-wrap items-center gap-3">
+											<p className="text-xs uppercase tracking-[0.12em] text-neutral-500 dark:text-neutral-400">
+												{config.label}
 											</p>
+											<StatusBadge status={`${items.length} total`} />
 										</div>
+										<p className="mt-1 text-sm text-neutral-600 dark:text-neutral-400">
+											{config.description}
+										</p>
 									</div>
 
 									{items.length ? (
 										<div className="space-y-3">
 											{items.map((tenant) => (
-												<button
+												<TenantRecordCard
 													key={tenant.id}
-													type="button"
-													onClick={() => selectTenant(tenant.id)}
-													className="w-full rounded-2xl border border-(--border-soft) bg-white/80 p-4 text-left transition hover:border-(--branding-700) hover:bg-red-50/40 dark:bg-neutral-950/40 dark:hover:bg-red-950/10"
-												>
-													<div className="flex flex-wrap items-start justify-between gap-3">
-														<div className="space-y-1.5">
-															<p className="font-semibold text-neutral-950 dark:text-neutral-50">
-																{tenant.displayName}
-															</p>
-															<p className="text-sm text-neutral-600 dark:text-neutral-400">
-																Account Owner: {tenant.primaryEmail}
-															</p>
-															<p className="text-xs text-neutral-500 dark:text-neutral-400">
-																{tenant.primaryPhone || "No phone on file"} | Updated {formatDate(tenant.updatedAt)}
-															</p>
-														</div>
-														<div className="flex flex-col items-end gap-2">
-															<StatusBadge status={tenant.status} />
-															{tenant.latestApplication ? (
-																<StatusBadge status={tenant.latestApplication.status} />
-															) : null}
-														</div>
-													</div>
-													<div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-xs text-neutral-500 dark:text-neutral-400">
-														<div className="flex flex-wrap gap-3">
-															<span>{tenant.communicationCount} communication(s)</span>
-															<span>{tenant.pendingTimelineCount} pending action(s)</span>
-															<span>{tenant.rentalCount} rental(s)</span>
-														</div>
-														<span className="inline-flex items-center gap-1 font-semibold text-(--branding-700)">
-															Open management
-															<ChevronRightIcon className="h-4 w-4" aria-hidden="true" />
-														</span>
-													</div>
-												</button>
+													tenant={tenant}
+													onClick={selectTenant}
+												/>
 											))}
 										</div>
 									) : (
-										<p className="text-sm text-neutral-600 dark:text-neutral-400">
+										<div className="rounded-2xl border border-dashed border-(--border-soft) p-4 text-sm text-neutral-600 dark:text-neutral-400">
 											No tenants in this group{searchQuery ? " for the current search." : "."}
-										</p>
+										</div>
 									)}
 								</div>
 							</Card>
