@@ -10,6 +10,7 @@ import StatusBadge from "@/components/admin/StatusBadge";
 import PortalBillingActions from "@/components/portal/PortalBillingActions";
 import {
 	EmptyDetailState,
+	formatRentalCurrency,
 	formatRentalDate,
 	formatRentalDateTime,
 	formatRentalLabel,
@@ -208,13 +209,51 @@ export function RentalBillingCard({
 	enableActions = false,
 	inactiveMessage = "Billing actions are unavailable for this rental.",
 }) {
-	const isLiveBillingRental = ["active", "past_due", "suspended"].includes(
-		rental?.status,
-	);
+	const billingInvoices = Array.isArray(rental?.billingInvoices)
+		? rental.billingInvoices
+		: [];
+	const latestInvoice = billingInvoices[0] ?? null;
+	const isActionableBillingRental = [
+		"awaiting_first_payment",
+		"active",
+		"past_due",
+		"suspended",
+	].includes(rental?.status) || [
+		"awaiting_first_payment",
+		"past_due",
+		"unpaid",
+	].includes(rental?.billingStatus);
+	const recentLines = billingInvoices
+		.flatMap((invoice) =>
+			(invoice.lines || []).map((line) => ({
+				...line,
+				invoiceStatus: invoice.status,
+				invoiceId: invoice.stripeInvoiceId,
+			}))
+		)
+		.slice(0, 5);
+
+	function invoiceLink() {
+		if (!latestInvoice) return null;
+		const url = latestInvoice.hostedInvoiceUrl || latestInvoice.invoicePdfUrl;
+		if (!url) return null;
+		return (
+			<a
+				href={url}
+				target="_blank"
+				rel="noreferrer"
+				className="text-sm font-semibold text-(--branding-700) hover:underline"
+			>
+				View latest invoice
+			</a>
+		);
+	}
+
+	const latestInvoiceLink = invoiceLink();
 
 	return (
 		<Card>
-			<div className="space-y-3">
+			<div className="space-y-4">
 				<div className="flex items-center gap-3">
 					<ExclamationTriangleIcon className="h-6 w-6 text-(--branding-700)" aria-hidden="true" />
 					<h3 className="font-syne text-2xl font-bold text-neutral-950 dark:text-neutral-50">
@@ -230,10 +269,66 @@ export function RentalBillingCard({
 						label="Current Period End"
 						value={formatRentalDate(rental.currentPeriodEnd, { dateStyle: "medium" })}
 					/>
-					<RentalMetricTile label="Last Invoice" value={rental.lastInvoiceId || "-"} />
+					<RentalMetricTile
+						label="Amount Due"
+						value={formatRentalCurrency(latestInvoice?.amountRemaining)}
+						hint={
+							latestInvoice?.status
+								? `Latest invoice: ${formatRentalLabel(latestInvoice.status)}`
+								: "No invoice activity yet."
+						}
+					/>
 				</div>
+
+				<div className="grid gap-4 md:grid-cols-3">
+					<RentalMetricTile
+						label="Invoice Total"
+						value={formatRentalCurrency(latestInvoice?.amountDue)}
+					/>
+					<RentalMetricTile
+						label="Paid"
+						value={formatRentalCurrency(latestInvoice?.amountPaid)}
+					/>
+					<RentalMetricTile
+						label="Deposit"
+						value={formatRentalCurrency(rental.depositAmount)}
+						hint="Included on the first payment when configured."
+					/>
+				</div>
+
+				{latestInvoiceLink ? <div>{latestInvoiceLink}</div> : null}
+
+				{recentLines.length ? (
+					<div className="space-y-2">
+						<p className="text-xs uppercase tracking-[0.12em] text-neutral-500 dark:text-neutral-400">
+							Recent Charges
+						</p>
+						<div className="space-y-2">
+							{recentLines.map((line) => (
+								<div
+									key={line.id}
+									className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-(--border-soft) bg-white/70 p-3 text-sm dark:bg-neutral-950/50"
+								>
+									<div>
+										<p className="font-medium text-neutral-950 dark:text-neutral-50">
+											{line.description || formatRentalLabel(line.sourceType)}
+										</p>
+										<p className="text-xs text-neutral-500 dark:text-neutral-400">
+											{formatRentalLabel(line.sourceType)} ·{" "}
+											{formatRentalLabel(line.invoiceStatus)}
+										</p>
+									</div>
+									<p className="font-semibold text-neutral-950 dark:text-neutral-50">
+										{formatRentalCurrency(line.amount)}
+									</p>
+								</div>
+							))}
+						</div>
+					</div>
+				) : null}
+
 				{enableActions ? (
-					isLiveBillingRental ? (
+					isActionableBillingRental ? (
 						<PortalBillingActions rentalId={rental.id} />
 					) : (
 						<p className="text-sm text-neutral-600 dark:text-neutral-400">

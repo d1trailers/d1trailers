@@ -148,6 +148,12 @@ export default function TenantRentalModal({
 				return;
 			}
 
+			if (action === "approve_draft" && json?.billing?.url) {
+				setSubmitSuccess("Proposal approved. Opening payment...");
+				window.location.href = json.billing.url;
+				return;
+			}
+
 			setSubmitSuccess(
 				action === "approve_draft"
 					? "Proposal approved. Reloading..."

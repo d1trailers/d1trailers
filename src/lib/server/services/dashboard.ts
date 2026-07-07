@@ -212,7 +212,8 @@ export async function getTenantAccountWorkspace(context: UserContext) {
 
 	const [rentals, timelineItems, communications] = await Promise.all([
 		hasTenantPermission(membership, "view_rentals") ||
-		hasTenantPermission(membership, "manage_rentals")
+		hasTenantPermission(membership, "manage_rentals") ||
+		hasTenantPermission(membership, "view_billing")
 			? listRentalsByTenantId(tenant.id)
 			: Promise.resolve([]),
 		hasTenantPermission(membership, "view_timeline")

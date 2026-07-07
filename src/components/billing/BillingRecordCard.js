@@ -35,17 +35,34 @@ export default function BillingRecordCard({
 	meta,
 	showTenantName = false,
 }) {
+	const invoices = Array.isArray(record.billingInvoices) ? record.billingInvoices : [];
+	const latestInvoice = invoices[0] ?? null;
 	const resolvedTitle =
-		title || (showTenantName ? record.tenantName || "Unknown tenant" : formatCurrency(record.rate));
+		title ||
+		(showTenantName
+			? record.tenantName || "Unknown tenant"
+			: formatCurrency(latestInvoice?.amountRemaining ?? record.rate));
 	const resolvedSubtitle =
-		subtitle || `Billing frequency: ${formatLabel(record.billingFrequency)}`;
+		subtitle ||
+		[
+			`Billing frequency: ${formatLabel(record.billingFrequency)}`,
+			latestInvoice?.status
+				? `Invoice: ${formatLabel(latestInvoice.status)}`
+				: null,
+		]
+			.filter(Boolean)
+			.join(" · ");
 	const resolvedMeta =
 		meta ||
-		(record.currentPeriodEnd
-			? `Current period end ${formatDate(record.currentPeriodEnd)}`
-			: record.lastInvoiceId
-				? `Last invoice ${record.lastInvoiceId}`
-				: "No invoice activity yet");
+		(latestInvoice
+			? `Due ${formatCurrency(latestInvoice.amountDue)} · Paid ${formatCurrency(
+					latestInvoice.amountPaid,
+				)} · Remaining ${formatCurrency(latestInvoice.amountRemaining)}`
+			: record.currentPeriodEnd
+				? `Current period end ${formatDate(record.currentPeriodEnd)}`
+				: record.lastInvoiceId
+					? `Last invoice ${record.lastInvoiceId}`
+					: "No invoice activity yet");
 
 	return (
 		<button

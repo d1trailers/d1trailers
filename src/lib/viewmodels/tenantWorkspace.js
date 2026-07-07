@@ -73,6 +73,52 @@ function parseNumericValue(value) {
 	return Number.isFinite(numericValue) ? numericValue : null;
 }
 
+function normalizeBillingInvoiceLine(line) {
+	return {
+		id: line.id,
+		invoiceId: line.invoice_id ?? line.invoiceId ?? null,
+		rentalId: line.rental_id ?? line.rentalId ?? null,
+		stripeLineItemId: line.stripe_line_item_id ?? line.stripeLineItemId ?? null,
+		sourceType: line.source_type ?? line.sourceType ?? "rental_charge",
+		description: line.description ?? "",
+		amount: parseNumericValue(line.amount),
+		quantity: parseNumericValue(line.quantity),
+		currency: line.currency ?? "usd",
+		periodStart: line.period_start ?? line.periodStart ?? null,
+		periodEnd: line.period_end ?? line.periodEnd ?? null,
+		metadata: line.metadata ?? {},
+		createdAt: line.created_at ?? line.createdAt ?? null,
+	};
+}
+
+function normalizeBillingInvoice(invoice) {
+	return {
+		id: invoice.id,
+		tenantId: invoice.tenant_id ?? invoice.tenantId ?? null,
+		rentalId: invoice.rental_id ?? invoice.rentalId ?? null,
+		stripeInvoiceId: invoice.stripe_invoice_id ?? invoice.stripeInvoiceId ?? null,
+		status: invoice.status ?? "unknown",
+		billingReason: invoice.billing_reason ?? invoice.billingReason ?? null,
+		currency: invoice.currency ?? "usd",
+		amountDue: parseNumericValue(invoice.amount_due ?? invoice.amountDue),
+		amountPaid: parseNumericValue(invoice.amount_paid ?? invoice.amountPaid),
+		amountRemaining: parseNumericValue(
+			invoice.amount_remaining ?? invoice.amountRemaining,
+		),
+		hostedInvoiceUrl:
+			invoice.hosted_invoice_url ?? invoice.hostedInvoiceUrl ?? null,
+		invoicePdfUrl: invoice.invoice_pdf_url ?? invoice.invoicePdfUrl ?? null,
+		periodStart: invoice.period_start ?? invoice.periodStart ?? null,
+		periodEnd: invoice.period_end ?? invoice.periodEnd ?? null,
+		dueAt: invoice.due_at ?? invoice.dueAt ?? null,
+		paidAt: invoice.paid_at ?? invoice.paidAt ?? null,
+		createdAt: invoice.created_at ?? invoice.createdAt ?? null,
+		lines: Array.isArray(invoice.lines)
+			? invoice.lines.map(normalizeBillingInvoiceLine)
+			: [],
+	};
+}
+
 function normalizeRental(rental, tenantName) {
 	const assignments = Array.isArray(rental.assignments)
 		? rental.assignments.map((assignment) => ({
@@ -111,6 +157,11 @@ function normalizeRental(rental, tenantName) {
 		updatedAt: rental.updated_at,
 		currentPeriodEnd: rental.current_period_end,
 		lastInvoiceId: rental.last_invoice_id,
+		billingInvoices: Array.isArray(rental.billing_invoices)
+			? rental.billing_invoices.map(normalizeBillingInvoice)
+			: Array.isArray(rental.billingInvoices)
+				? rental.billingInvoices.map(normalizeBillingInvoice)
+				: [],
 		assignments,
 	};
 }

@@ -167,10 +167,11 @@ async function buildUserContext(input: {
 			email: input.email,
 		});
 	}
+	const effectiveProfileId = profile.id;
 
 	const [staffMembership, rawTenantMemberships] = await Promise.all([
-		getStaffMembershipByProfileId(input.userId),
-		getTenantMembershipsByProfileId(input.userId),
+		getStaffMembershipByProfileId(effectiveProfileId),
+		getTenantMembershipsByProfileId(effectiveProfileId),
 	]);
 
 	const tenantMemberships = rawTenantMemberships
@@ -184,17 +185,17 @@ async function buildUserContext(input: {
 
 	if ((profile?.last_active_tenant_id ?? null) !== (activeTenantMembership?.tenant_id ?? null)) {
 		await updateProfileLastActiveTenant({
-			profileId: input.userId,
+			profileId: effectiveProfileId,
 			tenantId: activeTenantMembership?.tenant_id ?? null,
 		});
 	}
 
 	return {
-		userId: input.userId,
+		userId: effectiveProfileId,
 		email: normalizeEmail(input.email),
 		profile: {
 			...(profile ?? {
-				id: input.userId,
+				id: effectiveProfileId,
 				email: normalizeEmail(input.email),
 				display_name: null,
 				phone: null,
@@ -215,14 +216,15 @@ export async function reconcileUserContextByIdentity(input: {
 }) {
 	const normalizedEmail = normalizeEmail(input.email);
 
-	await ensureProfile({
+	const profile = await ensureProfile({
 		id: input.userId,
 		email: normalizedEmail,
 	});
+	const effectiveProfileId = profile.id;
 
 	if (STAFF_BOOTSTRAP_EMAILS.has(normalizedEmail)) {
 		await upsertStaffMembership({
-			profileId: input.userId,
+			profileId: effectiveProfileId,
 			role: "staff_admin",
 		});
 	}
@@ -241,7 +243,7 @@ export async function reconcileUserContextByIdentity(input: {
 
 		const membership = await createTenantMembership({
 			tenantId: invitation.tenant_id,
-			profileId: input.userId,
+			profileId: effectiveProfileId,
 			role: invitation.target_role,
 			invitationStatus: "active",
 			isActive: true,
@@ -259,13 +261,13 @@ export async function reconcileUserContextByIdentity(input: {
 			invitationId: invitation.id,
 			status: "accepted",
 			acceptedAt: nowIso,
-			acceptedByProfileId: input.userId,
+			acceptedByProfileId: effectiveProfileId,
 			revokedAt: null,
 		});
 	}
 
 	return buildUserContext({
-		userId: input.userId,
+		userId: effectiveProfileId,
 		email: normalizedEmail,
 	});
 }

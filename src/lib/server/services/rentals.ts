@@ -131,6 +131,52 @@ function mapRentalDocument(document: RentalDocumentRecord) {
 	};
 }
 
+function mapBillingInvoiceLine(line: any) {
+	return {
+		id: line.id,
+		invoiceId: line.invoice_id,
+		rentalId: line.rental_id,
+		stripeLineItemId: line.stripe_line_item_id,
+		sourceType: line.source_type,
+		description: line.description,
+		amount: parseNumericValue(line.amount),
+		quantity: parseNumericValue(line.quantity),
+		currency: line.currency,
+		periodStart: line.period_start,
+		periodEnd: line.period_end,
+		metadata: line.metadata ?? {},
+		createdAt: line.created_at,
+	};
+}
+
+function mapBillingInvoice(invoice: any) {
+	return {
+		id: invoice.id,
+		tenantId: invoice.tenant_id,
+		rentalId: invoice.rental_id,
+		stripeInvoiceId: invoice.stripe_invoice_id,
+		stripeCustomerId: invoice.stripe_customer_id,
+		stripeSubscriptionId: invoice.stripe_subscription_id,
+		status: invoice.status,
+		billingReason: invoice.billing_reason,
+		collectionMethod: invoice.collection_method,
+		currency: invoice.currency,
+		amountDue: parseNumericValue(invoice.amount_due),
+		amountPaid: parseNumericValue(invoice.amount_paid),
+		amountRemaining: parseNumericValue(invoice.amount_remaining),
+		hostedInvoiceUrl: invoice.hosted_invoice_url,
+		invoicePdfUrl: invoice.invoice_pdf_url,
+		periodStart: invoice.period_start,
+		periodEnd: invoice.period_end,
+		dueAt: invoice.due_at,
+		paidAt: invoice.paid_at,
+		createdAt: invoice.created_at,
+		lines: Array.isArray(invoice.lines)
+			? invoice.lines.map(mapBillingInvoiceLine)
+			: [],
+	};
+}
+
 function mapApplication(application: ApplicationRecord) {
 	return {
 		id: application.id,
@@ -232,6 +278,9 @@ export function mapRental(rental: RentalRecord) {
 		},
 		documents: Array.isArray(rental.documents)
 			? rental.documents.map(mapRentalDocument)
+			: [],
+		billingInvoices: Array.isArray(rental.billing_invoices)
+			? rental.billing_invoices.map(mapBillingInvoice)
 			: [],
 		assignments,
 		trailers: assignments

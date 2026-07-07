@@ -168,6 +168,81 @@ export type RentalDocumentRecord = {
 	signed_url?: string | null;
 };
 
+export type BillingInvoiceLineSource =
+	| "rental_charge"
+	| "deposit"
+	| "toll"
+	| "fee"
+	| "adjustment";
+
+export type BillingAccountRecord = {
+	id: string;
+	tenant_id: string;
+	stripe_customer_id: string | null;
+	default_currency: string;
+	created_at: string;
+	updated_at: string;
+};
+
+export type BillingInvoiceLineRecord = {
+	id: string;
+	invoice_id: string;
+	tenant_id: string;
+	rental_id: string | null;
+	stripe_line_item_id: string | null;
+	source_type: BillingInvoiceLineSource;
+	description: string | null;
+	amount: number;
+	quantity: number | null;
+	currency: string;
+	period_start: string | null;
+	period_end: string | null;
+	metadata: Record<string, unknown>;
+	created_at: string;
+	updated_at: string;
+};
+
+export type BillingInvoiceRecord = {
+	id: string;
+	tenant_id: string;
+	rental_id: string | null;
+	stripe_invoice_id: string;
+	stripe_customer_id: string | null;
+	stripe_subscription_id: string | null;
+	status: string;
+	billing_reason: string | null;
+	collection_method: string | null;
+	currency: string;
+	amount_due: number;
+	amount_paid: number;
+	amount_remaining: number;
+	hosted_invoice_url: string | null;
+	invoice_pdf_url: string | null;
+	period_start: string | null;
+	period_end: string | null;
+	due_at: string | null;
+	paid_at: string | null;
+	raw_payload: Record<string, unknown>;
+	created_at: string;
+	updated_at: string;
+	lines?: BillingInvoiceLineRecord[];
+};
+
+export type StripeEventRecord = {
+	id: string;
+	stripe_event_id: string;
+	event_type: string;
+	processing_status: "pending" | "processed" | "failed" | "skipped";
+	tenant_id: string | null;
+	rental_id: string | null;
+	billing_invoice_id: string | null;
+	error_message: string | null;
+	raw_payload: Record<string, unknown>;
+	processed_at: string | null;
+	created_at: string;
+	updated_at: string;
+};
+
 export type TrailerRecord = {
 	id: string;
 	trailer_code: string | null;
@@ -228,6 +303,7 @@ export type RentalRecord = {
 	application?: ApplicationRecord | null;
 	parent_rental?: RentalRecord | null;
 	documents?: RentalDocumentRecord[];
+	billing_invoices?: BillingInvoiceRecord[];
 };
 
 function admin() {
@@ -279,12 +355,32 @@ export async function ensureProfile(input: {
 	displayName?: string | null;
 	phone?: string | null;
 }) {
+	const normalizedEmail = normalizeEmail(input.email);
+	const existingByEmail = await getProfileByEmail(normalizedEmail);
+
+	if (existingByEmail && existingByEmail.id !== input.id) {
+		if (input.displayName || input.phone) {
+			const { data, error } = await admin()
+				.from("profiles")
+				.update({
+					display_name: input.displayName ?? existingByEmail.display_name,
+					phone: input.phone ?? existingByEmail.phone,
+				})
+				.eq("id", existingByEmail.id)
+				.select("*")
+				.single();
+			return assertData(data as ProfileRecord | null, error);
+		}
+
+		return existingByEmail;
+	}
+
 	const { data, error } = await admin()
 		.from("profiles")
 		.upsert(
 			{
 				id: input.id,
-				email: normalizeEmail(input.email),
+				email: normalizedEmail,
 				display_name: input.displayName ?? null,
 				phone: input.phone ?? null,
 			},
@@ -1037,6 +1133,50 @@ async function listAssignmentsByRentalIds(rentalIds: string[]) {
 	return (data as unknown as AssignmentRecord[]) ?? [];
 }
 
+async function listBillingInvoiceLinesByInvoiceIds(invoiceIds: string[]) {
+	if (!invoiceIds.length) {
+		return [] as BillingInvoiceLineRecord[];
+	}
+
+	const { data, error } = await admin()
+		.from("billing_invoice_lines")
+		.select("*")
+		.in("invoice_id", invoiceIds)
+		.order("created_at", { ascending: true });
+	if (error) throw new Error(error.message);
+	return (data as BillingInvoiceLineRecord[]) ?? [];
+}
+
+async function listBillingInvoicesByRentalIds(rentalIds: string[]) {
+	if (!rentalIds.length) {
+		return [] as BillingInvoiceRecord[];
+	}
+
+	const { data, error } = await admin()
+		.from("billing_invoices")
+		.select("*")
+		.in("rental_id", rentalIds)
+		.order("created_at", { ascending: false });
+	if (error) throw new Error(error.message);
+
+	const invoices = (data as BillingInvoiceRecord[]) ?? [];
+	const invoiceLines = await listBillingInvoiceLinesByInvoiceIds(
+		invoices.map((invoice) => invoice.id)
+	);
+	const linesByInvoiceId = new Map<string, BillingInvoiceLineRecord[]>();
+
+	for (const line of invoiceLines) {
+		const current = linesByInvoiceId.get(line.invoice_id) ?? [];
+		current.push(line);
+		linesByInvoiceId.set(line.invoice_id, current);
+	}
+
+	return invoices.map((invoice) => ({
+		...invoice,
+		lines: linesByInvoiceId.get(invoice.id) ?? [],
+	}));
+}
+
 async function attachParentRentals(rentals: RentalRecord[]) {
 	const parentIds = [...new Set(rentals.map((rental) => rental.parent_rental_id).filter(Boolean))];
 	if (!parentIds.length) {
@@ -1075,11 +1215,12 @@ async function hydrateRentals(rentals: RentalRecord[]) {
 		...new Set(rentals.map((rental) => rental.application_id).filter(Boolean)),
 	] as string[];
 
-	const [tenants, applications, assignments, documents] = await Promise.all([
+	const [tenants, applications, assignments, documents, billingInvoices] = await Promise.all([
 		listTenantsByIds(tenantIds),
 		listApplicationsByIds(applicationIds),
 		listAssignmentsByRentalIds(rentalIds),
 		listRentalDocumentsByRentalIds(rentalIds),
+		listBillingInvoicesByRentalIds(rentalIds),
 	]);
 
 	const tenantById = new Map(tenants.map((tenant) => [tenant.id, tenant]));
@@ -1088,6 +1229,7 @@ async function hydrateRentals(rentals: RentalRecord[]) {
 	);
 	const assignmentsByRentalId = new Map<string, AssignmentRecord[]>();
 	const documentsByRentalId = new Map<string, RentalDocumentRecord[]>();
+	const billingInvoicesByRentalId = new Map<string, BillingInvoiceRecord[]>();
 
 	for (const assignment of assignments) {
 		const current = assignmentsByRentalId.get(assignment.rental_id) ?? [];
@@ -1101,6 +1243,13 @@ async function hydrateRentals(rentals: RentalRecord[]) {
 		documentsByRentalId.set(document.rental_id, current);
 	}
 
+	for (const invoice of billingInvoices) {
+		if (!invoice.rental_id) continue;
+		const current = billingInvoicesByRentalId.get(invoice.rental_id) ?? [];
+		current.push(invoice);
+		billingInvoicesByRentalId.set(invoice.rental_id, current);
+	}
+
 	const rentalsWithRelations = rentals.map((rental) => ({
 		...rental,
 		tenant: tenantById.get(rental.tenant_id) ?? null,
@@ -1109,6 +1258,7 @@ async function hydrateRentals(rentals: RentalRecord[]) {
 			: null,
 		assignments: assignmentsByRentalId.get(rental.id) ?? [],
 		documents: documentsByRentalId.get(rental.id) ?? [],
+		billing_invoices: billingInvoicesByRentalId.get(rental.id) ?? [],
 	}));
 
 	return attachParentRentals(rentalsWithRelations);
@@ -1296,6 +1446,256 @@ export async function updateRental(input: {
 	const rental = assertData(data as RentalRecord | null, error);
 	const [hydratedRental] = await hydrateRentals([rental]);
 	return hydratedRental;
+}
+
+export async function getRentalByStripeSubscriptionId(stripeSubscriptionId: string) {
+	const { data, error } = await admin()
+		.from("rentals")
+		.select(rentalSelect())
+		.eq("stripe_subscription_id", stripeSubscriptionId)
+		.maybeSingle();
+	if (error) throw new Error(error.message);
+	if (!data) return null;
+	const [rental] = await hydrateRentals([data as unknown as RentalRecord]);
+	return rental ?? null;
+}
+
+export async function getRentalByLastInvoiceId(stripeInvoiceId: string) {
+	const { data, error } = await admin()
+		.from("rentals")
+		.select(rentalSelect())
+		.eq("last_invoice_id", stripeInvoiceId)
+		.maybeSingle();
+	if (error) throw new Error(error.message);
+	if (!data) return null;
+	const [rental] = await hydrateRentals([data as unknown as RentalRecord]);
+	return rental ?? null;
+}
+
+export async function getBillingAccountByTenantId(tenantId: string) {
+	const { data, error } = await admin()
+		.from("billing_accounts")
+		.select("*")
+		.eq("tenant_id", tenantId)
+		.maybeSingle();
+	if (error) throw new Error(error.message);
+	return (data as BillingAccountRecord | null) ?? null;
+}
+
+export async function getBillingAccountByStripeCustomerId(stripeCustomerId: string) {
+	const { data, error } = await admin()
+		.from("billing_accounts")
+		.select("*")
+		.eq("stripe_customer_id", stripeCustomerId)
+		.maybeSingle();
+	if (error) throw new Error(error.message);
+	return (data as BillingAccountRecord | null) ?? null;
+}
+
+export async function upsertBillingAccount(input: {
+	tenantId: string;
+	stripeCustomerId?: string | null;
+	defaultCurrency?: string | null;
+}) {
+	const { data, error } = await admin()
+		.from("billing_accounts")
+		.upsert(
+			{
+				tenant_id: input.tenantId,
+				stripe_customer_id: input.stripeCustomerId ?? null,
+				default_currency: input.defaultCurrency ?? "usd",
+			},
+			{ onConflict: "tenant_id" }
+		)
+		.select("*")
+		.single();
+	return assertData(data as BillingAccountRecord | null, error);
+}
+
+export async function getBillingInvoiceByStripeInvoiceId(stripeInvoiceId: string) {
+	const { data, error } = await admin()
+		.from("billing_invoices")
+		.select("*")
+		.eq("stripe_invoice_id", stripeInvoiceId)
+		.maybeSingle();
+	if (error) throw new Error(error.message);
+	if (!data) return null;
+	const lines = await listBillingInvoiceLinesByInvoiceIds([data.id]);
+	return {
+		...(data as BillingInvoiceRecord),
+		lines,
+	};
+}
+
+export async function listBillingInvoicesByRentalId(rentalId: string) {
+	return listBillingInvoicesByRentalIds([rentalId]);
+}
+
+export async function upsertBillingInvoice(input: {
+	tenantId: string;
+	rentalId?: string | null;
+	stripeInvoiceId: string;
+	stripeCustomerId?: string | null;
+	stripeSubscriptionId?: string | null;
+	status: string;
+	billingReason?: string | null;
+	collectionMethod?: string | null;
+	currency?: string | null;
+	amountDue?: number | null;
+	amountPaid?: number | null;
+	amountRemaining?: number | null;
+	hostedInvoiceUrl?: string | null;
+	invoicePdfUrl?: string | null;
+	periodStart?: string | null;
+	periodEnd?: string | null;
+	dueAt?: string | null;
+	paidAt?: string | null;
+	rawPayload?: Record<string, unknown>;
+}) {
+	const { data, error } = await admin()
+		.from("billing_invoices")
+		.upsert(
+			{
+				tenant_id: input.tenantId,
+				rental_id: input.rentalId ?? null,
+				stripe_invoice_id: input.stripeInvoiceId,
+				stripe_customer_id: input.stripeCustomerId ?? null,
+				stripe_subscription_id: input.stripeSubscriptionId ?? null,
+				status: input.status,
+				billing_reason: input.billingReason ?? null,
+				collection_method: input.collectionMethod ?? null,
+				currency: input.currency ?? "usd",
+				amount_due: input.amountDue ?? 0,
+				amount_paid: input.amountPaid ?? 0,
+				amount_remaining: input.amountRemaining ?? 0,
+				hosted_invoice_url: input.hostedInvoiceUrl ?? null,
+				invoice_pdf_url: input.invoicePdfUrl ?? null,
+				period_start: input.periodStart ?? null,
+				period_end: input.periodEnd ?? null,
+				due_at: input.dueAt ?? null,
+				paid_at: input.paidAt ?? null,
+				raw_payload: input.rawPayload ?? {},
+			},
+			{ onConflict: "stripe_invoice_id" }
+		)
+		.select("*")
+		.single();
+	return assertData(data as BillingInvoiceRecord | null, error);
+}
+
+export async function replaceBillingInvoiceLines(input: {
+	invoiceId: string;
+	lines: Array<{
+		tenantId: string;
+		rentalId?: string | null;
+		stripeLineItemId?: string | null;
+		sourceType?: BillingInvoiceLineSource;
+		description?: string | null;
+		amount?: number | null;
+		quantity?: number | null;
+		currency?: string | null;
+		periodStart?: string | null;
+		periodEnd?: string | null;
+		metadata?: Record<string, unknown>;
+	}>;
+}) {
+	const client = admin();
+	const { error: deleteError } = await client
+		.from("billing_invoice_lines")
+		.delete()
+		.eq("invoice_id", input.invoiceId);
+	if (deleteError) throw new Error(deleteError.message);
+
+	if (!input.lines.length) {
+		return [] as BillingInvoiceLineRecord[];
+	}
+
+	const { data, error } = await client
+		.from("billing_invoice_lines")
+		.insert(
+			input.lines.map((line) => ({
+				invoice_id: input.invoiceId,
+				tenant_id: line.tenantId,
+				rental_id: line.rentalId ?? null,
+				stripe_line_item_id: line.stripeLineItemId ?? null,
+				source_type: line.sourceType ?? "rental_charge",
+				description: line.description ?? null,
+				amount: line.amount ?? 0,
+				quantity: line.quantity ?? null,
+				currency: line.currency ?? "usd",
+				period_start: line.periodStart ?? null,
+				period_end: line.periodEnd ?? null,
+				metadata: line.metadata ?? {},
+			}))
+		)
+		.select("*");
+	if (error) throw new Error(error.message);
+	return (data as BillingInvoiceLineRecord[]) ?? [];
+}
+
+export async function getStripeEventByEventId(stripeEventId: string) {
+	const { data, error } = await admin()
+		.from("stripe_events")
+		.select("*")
+		.eq("stripe_event_id", stripeEventId)
+		.maybeSingle();
+	if (error) throw new Error(error.message);
+	return (data as StripeEventRecord | null) ?? null;
+}
+
+export async function createStripeEvent(input: {
+	stripeEventId: string;
+	eventType: string;
+	processingStatus?: StripeEventRecord["processing_status"];
+	tenantId?: string | null;
+	rentalId?: string | null;
+	billingInvoiceId?: string | null;
+	rawPayload?: Record<string, unknown>;
+}) {
+	const { data, error } = await admin()
+		.from("stripe_events")
+		.insert({
+			stripe_event_id: input.stripeEventId,
+			event_type: input.eventType,
+			processing_status: input.processingStatus ?? "pending",
+			tenant_id: input.tenantId ?? null,
+			rental_id: input.rentalId ?? null,
+			billing_invoice_id: input.billingInvoiceId ?? null,
+			raw_payload: input.rawPayload ?? {},
+		})
+		.select("*")
+		.single();
+	return assertData(data as StripeEventRecord | null, error);
+}
+
+export async function updateStripeEvent(input: {
+	stripeEventId: string;
+	processingStatus: StripeEventRecord["processing_status"];
+	tenantId?: string | null;
+	rentalId?: string | null;
+	billingInvoiceId?: string | null;
+	errorMessage?: string | null;
+	processedAt?: string | null;
+}) {
+	const updates: Record<string, unknown> = {
+		processing_status: input.processingStatus,
+	};
+
+	if ("tenantId" in input) updates.tenant_id = input.tenantId ?? null;
+	if ("rentalId" in input) updates.rental_id = input.rentalId ?? null;
+	if ("billingInvoiceId" in input) {
+		updates.billing_invoice_id = input.billingInvoiceId ?? null;
+	}
+	if ("errorMessage" in input) updates.error_message = input.errorMessage ?? null;
+	if ("processedAt" in input) updates.processed_at = input.processedAt ?? null;
+
+	const { data, error } = await admin()
+		.from("stripe_events")
+		.update(updates)
+		.eq("stripe_event_id", input.stripeEventId)
+		.select("*")
+		.single();
+	return assertData(data as StripeEventRecord | null, error);
 }
 
 export async function deleteRental(rentalId: string) {
