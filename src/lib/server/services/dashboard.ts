@@ -13,10 +13,15 @@ import {
 	listTimelineItemsByTenantId,
 	listTimelineItemsByTenantIds,
 } from "@/lib/server/repos/platform";
+import { type UserContext } from "@/lib/server/services/access";
 import {
-	hasTenantPermission,
-	type UserContext,
-} from "@/lib/server/services/access";
+	filterTenantVisibleTimelineItems,
+	getTenantVisibility,
+	toTenantApplicationRecord,
+	toTenantCommunicationRecords,
+	toTenantRentalRecord,
+	toTenantTenantRecord,
+} from "@/lib/server/dto/tenant";
 
 const ADMIN_MANAGEMENT_GROUPS = {
 	active: new Set(["active"]),
@@ -152,17 +157,20 @@ export async function getTenantTimeline(context: UserContext) {
 		};
 	}
 
+	const visibility = getTenantVisibility(membership);
 	const [items, applications] = await Promise.all([
-		hasTenantPermission(membership, "view_timeline")
+		visibility.canViewTimeline
 			? listTimelineItemsByTenantId(tenant.id)
 			: Promise.resolve([]),
 		listApplicationsByTenantId(tenant.id),
 	]);
 
 	return {
-		tenant,
-		items,
-		applications,
+		tenant: toTenantTenantRecord(tenant),
+		items: filterTenantVisibleTimelineItems(items),
+		applications: applications.map((application) =>
+			toTenantApplicationRecord(application, visibility)
+		),
 	};
 }
 
@@ -178,23 +186,26 @@ export async function getPortalSnapshot(context: UserContext) {
 		};
 	}
 
+	const visibility = getTenantVisibility(membership);
 	const [rentals, timelineItems, applications] = await Promise.all([
-		hasTenantPermission(membership, "view_rentals")
+		visibility.canViewRentals
 			? listRentalsByTenantId(tenant.id)
 			: Promise.resolve([]),
-		hasTenantPermission(membership, "view_timeline")
+		visibility.canViewTimeline
 			? listTimelineItemsByTenantId(tenant.id)
 			: Promise.resolve([]),
-		hasTenantPermission(membership, "view_documents")
+		visibility.canViewDocuments
 			? listApplicationsByTenantId(tenant.id)
 			: Promise.resolve([]),
 	]);
 
 	return {
-		tenant,
-		rentals,
-		timelineItems,
-		applications,
+		tenant: toTenantTenantRecord(tenant),
+		rentals: rentals.map((rental) => toTenantRentalRecord(rental, visibility)),
+		timelineItems: filterTenantVisibleTimelineItems(timelineItems),
+		applications: applications.map((application) =>
+			toTenantApplicationRecord(application, visibility)
+		),
 	};
 }
 
@@ -210,24 +221,25 @@ export async function getTenantAccountWorkspace(context: UserContext) {
 		};
 	}
 
+	const visibility = getTenantVisibility(membership);
 	const [rentals, timelineItems, communications] = await Promise.all([
-		hasTenantPermission(membership, "view_rentals") ||
-		hasTenantPermission(membership, "manage_rentals") ||
-		hasTenantPermission(membership, "view_billing")
+		visibility.canViewRentals ||
+		visibility.canManageRentals ||
+		visibility.canViewBilling
 			? listRentalsByTenantId(tenant.id)
 			: Promise.resolve([]),
-		hasTenantPermission(membership, "view_timeline")
+		visibility.canViewTimeline
 			? listTimelineItemsByTenantId(tenant.id)
 			: Promise.resolve([]),
-		hasTenantPermission(membership, "view_timeline")
+		visibility.canViewTimeline
 			? listCommunicationEventsByTenantId(tenant.id)
 			: Promise.resolve([]),
 	]);
 
 	return {
-		tenant,
-		rentals,
-		timelineItems,
-		communications,
+		tenant: toTenantTenantRecord(tenant),
+		rentals: rentals.map((rental) => toTenantRentalRecord(rental, visibility)),
+		timelineItems: filterTenantVisibleTimelineItems(timelineItems),
+		communications: toTenantCommunicationRecords(communications),
 	};
 }

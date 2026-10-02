@@ -1,39 +1,34 @@
+import { ZodError } from "zod";
+import { getClientIp, RateLimitError } from "@/lib/server/security/rateLimit";
 import { requestLoginLink } from "@/lib/server/services/auth";
 
-function getErrorStatus(error: unknown) {
-	const message =
-		error instanceof Error ? error.message.toLowerCase() : "unknown error";
-
-	if (message.includes("email")) {
-		return 400;
-	}
-
-	return 500;
-}
+const GENERIC_SUCCESS_MESSAGE =
+	"If this email is recognized, a secure sign-in link is on its way. Check your inbox.";
 
 export async function POST(request: Request) {
 	try {
-		const body = await request.json();
-		const result = await requestLoginLink(body?.email);
+		const body = await request.json().catch(() => ({}));
+		await requestLoginLink(body?.email, { ip: getClientIp(request) });
 
-		return Response.json(
-			{
-				message:
-					"If this email is recognized in the system, a secure login link has been generated.",
-				actionLink: result?.actionLink ?? null,
-			},
-			{ status: 200 }
-		);
+		// Identical response for eligible and ineligible emails. The link itself is only
+		// ever delivered by email.
+		return Response.json({ message: GENERIC_SUCCESS_MESSAGE }, { status: 200 });
 	} catch (error) {
-		console.error("Failed to request login link:", error);
+		if (error instanceof ZodError) {
+			return Response.json({ error: "Enter a valid email address." }, { status: 400 });
+		}
+
+		if (error instanceof RateLimitError) {
+			return Response.json({ error: error.message }, { status: 429 });
+		}
+
+		console.error(
+			"Failed to request login link:",
+			error instanceof Error ? error.message : error
+		);
 		return Response.json(
-			{
-				error:
-					error instanceof Error
-						? error.message
-						: "Failed to request login link.",
-			},
-			{ status: getErrorStatus(error) }
+			{ error: "We couldn't process that request. Please try again shortly." },
+			{ status: 500 }
 		);
 	}
 }

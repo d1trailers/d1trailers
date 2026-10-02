@@ -14,8 +14,15 @@ import {
 	canManageRentals,
 	getMembershipPermissions,
 	hasTenantPermission,
+	type TenantMembershipContext,
 	type UserContext,
 } from "@/lib/server/services/access";
+import { getTenantVisibility, toTenantMappedRental } from "@/lib/server/dto/tenant";
+import {
+	readValidatedUpload,
+	UploadValidationError,
+	type ValidatedUpload,
+} from "@/lib/server/uploads/validateUpload";
 import { cancelRentalBillingSubscription } from "@/lib/server/services/billing";
 import {
 	createAssignment,
@@ -511,6 +518,10 @@ export function mapRental(rental: RentalRecord) {
 	};
 }
 
+function mapTenantRental(rental: RentalRecord, membership: TenantMembershipContext) {
+	return toTenantMappedRental(mapRental(rental), getTenantVisibility(membership));
+}
+
 function ensureTenantContext(context: UserContext) {
 	const membership = context.activeTenantMembership;
 	if (!membership) {
@@ -840,7 +851,7 @@ export async function listAccountRentals(context: UserContext) {
 			status: membership.tenant.status,
 			permissions: getMembershipPermissions(membership),
 		},
-		rentals: rentals.map(mapRental),
+		rentals: rentals.map((rental) => mapTenantRental(rental, membership)),
 	};
 }
 
@@ -894,7 +905,7 @@ export async function createAccountRentalRequest(context: UserContext, rawInput:
 
 	await syncTenantStatusFromRentals(membership.tenant_id);
 
-	return mapRental(refreshedRental ?? rental);
+	return mapTenantRental(refreshedRental ?? rental, membership);
 }
 
 export async function submitAccountRentalModification(
@@ -993,7 +1004,7 @@ export async function submitAccountRentalModification(
 		);
 		await syncTenantStatusFromRentals(approvedRental.tenant_id);
 		const refreshedApprovedRental = await getRentalById(approvedRental.id);
-		return mapRental(refreshedApprovedRental ?? approvedRental);
+		return mapTenantRental(refreshedApprovedRental ?? approvedRental, membership);
 	}
 
 	if (action === "decline_draft") {
@@ -1016,10 +1027,17 @@ export async function submitAccountRentalModification(
 		});
 
 		await syncTenantStatusFromRentals(declinedRental.tenant_id);
-		return mapRental(declinedRental);
+		return mapTenantRental(declinedRental, membership);
 	}
 
 	if (action === "cancel_rental") {
+		if (rental.record_kind === "agreement") {
+			throw new RentalOperationError(
+				409,
+				"Active agreements can't be cancelled from the portal. Please contact D1 Trailers to end this agreement."
+			);
+		}
+
 		if (rental.stripe_subscription_id) {
 			await cancelRentalBillingSubscription(rental.id);
 		}
@@ -1038,7 +1056,14 @@ export async function submitAccountRentalModification(
 		});
 
 		await syncTenantStatusFromRentals(cancelledRental.tenant_id);
-		return mapRental(cancelledRental);
+		return mapTenantRental(cancelledRental, membership);
+	}
+
+	if (rental.record_kind === "agreement" && rental.status !== "customer_review") {
+		throw new RentalOperationError(
+			409,
+			"Live agreements can't be changed from the portal. Please contact D1 Trailers to request changes."
+		);
 	}
 
 	await flagBillingCreditReviewIfNeeded({
@@ -1073,32 +1098,28 @@ export async function submitAccountRentalModification(
 	);
 	await syncTenantStatusFromRentals(updatedRental.tenant_id);
 	const refreshedUpdatedRental = await getRentalById(updatedRental.id);
-	return mapRental(refreshedUpdatedRental ?? updatedRental);
+	return mapTenantRental(refreshedUpdatedRental ?? updatedRental, membership);
 }
 
 const MAX_RENTAL_DOCUMENT_SIZE_BYTES = 5 * 1024 * 1024;
-const ALLOWED_RENTAL_DOCUMENT_TYPES = new Set([
-	"application/pdf",
-	"image/jpeg",
-	"image/png",
-	"image/webp",
-]);
 
-function parseRentalDocumentForm(formData: FormData) {
+async function parseRentalDocumentForm(formData: FormData) {
 	const rawFile = formData.get("file");
 	if (!(rawFile instanceof File) || !rawFile.name) {
 		throw new RentalOperationError(400, "A document file is required.");
 	}
 
-	if (rawFile.size > MAX_RENTAL_DOCUMENT_SIZE_BYTES) {
-		throw new RentalOperationError(400, "Documents must be 5 MB or smaller.");
-	}
-
-	if (rawFile.type && !ALLOWED_RENTAL_DOCUMENT_TYPES.has(rawFile.type)) {
-		throw new RentalOperationError(
-			400,
-			"Documents must be a PDF, JPG, PNG, or WebP file."
-		);
+	let upload: ValidatedUpload;
+	try {
+		upload = await readValidatedUpload(rawFile, {
+			label: "Documents",
+			maxBytes: MAX_RENTAL_DOCUMENT_SIZE_BYTES,
+		});
+	} catch (error) {
+		if (error instanceof UploadValidationError) {
+			throw new RentalOperationError(400, error.message);
+		}
+		throw error;
 	}
 
 	const documentType = String(formData.get("documentType") ?? "")
@@ -1111,7 +1132,7 @@ function parseRentalDocumentForm(formData: FormData) {
 	const category = String(formData.get("category") ?? "").trim() || null;
 
 	return {
-		file: rawFile,
+		upload,
 		documentType,
 		category,
 	};
@@ -1129,18 +1150,18 @@ export async function uploadAccountRentalDocument(
 		throw new RentalOperationError(404, "The selected rental was not found.");
 	}
 
-	const input = parseRentalDocumentForm(formData);
+	const input = await parseRentalDocumentForm(formData);
 	const storagePath = await uploadRentalFile({
 		rentalId,
-		file: input.file,
+		upload: input.upload,
 	});
 
 	return createRentalDocument({
 		rentalId,
 		bucket: "application-documents",
 		storagePath,
-		fileName: input.file.name,
-		contentType: input.file.type,
+		fileName: input.upload.fileName,
+		contentType: input.upload.contentType,
 		category: input.category,
 		documentType: input.documentType,
 		createdByProfileId: context.userId,
@@ -1153,18 +1174,18 @@ export async function uploadAdminRentalDocument(rentalId: string, formData: Form
 		throw new RentalOperationError(404, "Rental not found.");
 	}
 
-	const input = parseRentalDocumentForm(formData);
+	const input = await parseRentalDocumentForm(formData);
 	const storagePath = await uploadRentalFile({
 		rentalId,
-		file: input.file,
+		upload: input.upload,
 	});
 
 	return createRentalDocument({
 		rentalId,
 		bucket: "application-documents",
 		storagePath,
-		fileName: input.file.name,
-		contentType: input.file.type,
+		fileName: input.upload.fileName,
+		contentType: input.upload.contentType,
 		category: input.category,
 		documentType: input.documentType,
 	});
@@ -1218,12 +1239,25 @@ export async function removeAccountRentalAssignment(
 	assignmentId: string
 ) {
 	const membership = ensureCanManageRentals(context);
-	return removeRentalAssignmentCore({
+	const rental = await getRentalById(rentalId);
+	if (!rental || rental.tenant_id !== membership.tenant_id) {
+		throw new RentalOperationError(404, "The selected rental was not found.");
+	}
+
+	if (rental.record_kind === "agreement") {
+		throw new RentalOperationError(
+			409,
+			"Trailers can't be removed from an agreement in the portal. Please contact D1 Trailers to request changes."
+		);
+	}
+
+	const updatedRental = await removeRentalAssignmentCore({
 		rentalId,
 		assignmentId,
 		tenantId: membership.tenant_id,
 		actor: "tenant",
 	});
+	return toTenantMappedRental(updatedRental, getTenantVisibility(membership));
 }
 
 export async function removeAdminRentalAssignment(

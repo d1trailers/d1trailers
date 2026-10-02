@@ -21,14 +21,13 @@ import { ensureOwnerInvitationForTenant } from "@/lib/server/services/accounts";
 import { sendTransactionalEmail } from "@/lib/server/services/communications";
 import type { UserContext } from "@/lib/server/services/access";
 import { syncJourneyAfterApplicationSubmission } from "@/lib/server/services/journey";
+import {
+	readValidatedUpload,
+	type ValidatedUpload,
+} from "@/lib/server/uploads/validateUpload";
 
 const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
-const ALLOWED_FILE_TYPES = new Set([
-	"application/pdf",
-	"image/jpeg",
-	"image/png",
-	"image/webp",
-]);
+const MAX_ADDITIONAL_FILES = 5;
 
 function truthyFormValue(value: FormDataEntryValue | null) {
 	if (typeof value !== "string") return false;
@@ -64,17 +63,7 @@ function normalizeDigits(value: string) {
 	return value.replace(/\D/g, "");
 }
 
-function validateApplicationFile(file: File, label: string) {
-	if (file.size > MAX_FILE_SIZE_BYTES) {
-		throw new Error(`${label} must be under 5 MB.`);
-	}
-
-	if (file.type && !ALLOWED_FILE_TYPES.has(file.type)) {
-		throw new Error(`${label} must be a PDF, JPG, PNG, or WebP file.`);
-	}
-}
-
-function getRequiredFile(
+async function getRequiredFile(
 	formData: FormData,
 	field: RequiredApplicationDocumentField
 ) {
@@ -83,18 +72,29 @@ function getRequiredFile(
 		throw new Error(`${applicationDocumentTypes[field].label} is required.`);
 	}
 
-	validateApplicationFile(value, applicationDocumentTypes[field].label);
-	return value;
+	return readValidatedUpload(value, {
+		label: applicationDocumentTypes[field].label,
+		maxBytes: MAX_FILE_SIZE_BYTES,
+	});
 }
 
-function getAdditionalApplicationFiles(formData: FormData) {
-	return formData
+async function getAdditionalApplicationFiles(formData: FormData) {
+	const files = formData
 		.getAll("otherDocuments")
-		.filter((value): value is File => value instanceof File && Boolean(value.name))
-		.map((file) => {
-			validateApplicationFile(file, file.name || "Other supporting document");
-			return file;
-		});
+		.filter((value): value is File => value instanceof File && Boolean(value.name));
+
+	if (files.length > MAX_ADDITIONAL_FILES) {
+		throw new Error(`You can attach up to ${MAX_ADDITIONAL_FILES} additional documents.`);
+	}
+
+	return Promise.all(
+		files.map((file) =>
+			readValidatedUpload(file, {
+				label: "Each additional document",
+				maxBytes: MAX_FILE_SIZE_BYTES,
+			})
+		)
+	);
 }
 
 export async function submitApplication(formData: FormData) {
@@ -131,12 +131,13 @@ export async function submitApplication(formData: FormData) {
 	});
 
 	const files = Object.fromEntries(
-		requiredApplicationDocumentFields.map((field) => [
-			field,
-			getRequiredFile(formData, field),
-		])
-	) as Record<RequiredApplicationDocumentField, File>;
-	const additionalFiles = getAdditionalApplicationFiles(formData);
+		await Promise.all(
+			requiredApplicationDocumentFields.map(
+				async (field) => [field, await getRequiredFile(formData, field)] as const
+			)
+		)
+	) as Record<RequiredApplicationDocumentField, ValidatedUpload>;
+	const additionalFiles = await getAdditionalApplicationFiles(formData);
 
 	const tenant = await createTenant({
 		displayName: payload.companyName,
@@ -165,15 +166,15 @@ export async function submitApplication(formData: FormData) {
 			const storagePath = await uploadApplicationFile({
 				applicationId: application.id,
 				documentField: field,
-				file: files[field],
+				upload: files[field],
 			});
 
 			return createApplicationDocument({
 				applicationId: application.id,
 				bucket: "application-documents",
 				storagePath,
-				fileName: files[field].name,
-				contentType: files[field].type,
+				fileName: files[field].fileName,
+				contentType: files[field].contentType,
 				category: applicationDocumentTypes[field].category,
 				documentType: applicationDocumentTypes[field].documentType,
 			});
@@ -185,15 +186,15 @@ export async function submitApplication(formData: FormData) {
 			const storagePath = await uploadApplicationFile({
 				applicationId: application.id,
 				documentField: "other",
-				file,
+				upload: file,
 			});
 
 			return createApplicationDocument({
 				applicationId: application.id,
 				bucket: "application-documents",
 				storagePath,
-				fileName: file.name,
-				contentType: file.type,
+				fileName: file.fileName,
+				contentType: file.contentType,
 				category: "other",
 				documentType: "other",
 			});

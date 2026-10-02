@@ -15,6 +15,12 @@ const REASON_COPY = {
 			"This login link is no longer valid. Request a fresh link and use the most recent email.",
 		icon: ExclamationCircleIcon,
 	},
+	conflict: {
+		title: "Account Needs Attention",
+		message:
+			"We couldn't sign you in because this email is linked to a different account. Contact D1 Trailers so we can sort it out.",
+		icon: ExclamationCircleIcon,
+	},
 	missing: {
 		title: "Link Incomplete",
 		message:

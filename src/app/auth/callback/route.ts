@@ -2,6 +2,7 @@ import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { type EmailOtpType } from "@supabase/supabase-js";
 import { NextResponse, type NextRequest } from "next/server";
 import { env } from "@/lib/server/env";
+import { IdentityConflictError } from "@/lib/server/repos/platform";
 import {
 	reconcileUserContextByIdentity,
 	resolvePostLoginDestination,
@@ -85,10 +86,21 @@ export async function GET(request: NextRequest) {
 		return NextResponse.redirect(new URL("/login/expired?reason=invalid", env.APP_BASE_URL));
 	}
 
-	const context = await reconcileUserContextByIdentity({
-		userId: user.id,
-		email: user.email,
-	});
+	let context;
+	try {
+		context = await reconcileUserContextByIdentity({
+			userId: user.id,
+			email: user.email,
+		});
+	} catch (error) {
+		if (error instanceof IdentityConflictError) {
+			await supabase.auth.signOut();
+			return NextResponse.redirect(
+				new URL("/login/expired?reason=conflict", env.APP_BASE_URL)
+			);
+		}
+		throw error;
+	}
 
 	response = redirectWithCookies(
 		response,

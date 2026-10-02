@@ -3,10 +3,12 @@ import { createClient } from "@/lib/supabase/server";
 import { getStaffBootstrapEmails } from "@/lib/server/env";
 import {
 	createTenantMembership,
+	ensureBootstrapStaffMembership,
 	ensureProfile,
 	getProfileById,
 	getStaffMembershipByProfileId,
 	getTenantMembershipsByProfileId,
+	IdentityConflictError,
 	listPendingTenantInvitationsByEmail,
 	replaceTenantMembershipPermissions,
 	type ProfileRecord,
@@ -16,7 +18,6 @@ import {
 	type TenantRecord,
 	updateProfileLastActiveTenant,
 	updateTenantInvitation,
-	upsertStaffMembership,
 } from "@/lib/server/repos/platform";
 
 export type TenantMembershipContext = TenantMembershipRecord & {
@@ -223,10 +224,7 @@ export async function reconcileUserContextByIdentity(input: {
 	const effectiveProfileId = profile.id;
 
 	if (STAFF_BOOTSTRAP_EMAILS.has(normalizedEmail)) {
-		await upsertStaffMembership({
-			profileId: effectiveProfileId,
-			role: "staff_admin",
-		});
+		await ensureBootstrapStaffMembership(effectiveProfileId);
 	}
 
 	const invitations = await listPendingTenantInvitationsByEmail(normalizedEmail);
@@ -288,10 +286,17 @@ export async function getCurrentUserContext(): Promise<UserContext | null> {
 	}
 	if (!user?.id || !user.email) return null;
 
-	return buildUserContext({
-		userId: user.id,
-		email: user.email,
-	});
+	try {
+		return await buildUserContext({
+			userId: user.id,
+			email: user.email,
+		});
+	} catch (error) {
+		if (error instanceof IdentityConflictError) {
+			return null;
+		}
+		throw error;
+	}
 }
 
 export function isStaffContext(context: UserContext | null) {

@@ -1,3 +1,4 @@
+import type { ValidatedUpload } from "@/lib/server/uploads/validateUpload";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { randomUUID } from "crypto";
 import type {
@@ -405,6 +406,13 @@ function normalizeEmail(email: string) {
 	return email.trim().toLowerCase();
 }
 
+export class IdentityConflictError extends Error {
+	constructor() {
+		super("This email address is already linked to a different account.");
+		this.name = "IdentityConflictError";
+	}
+}
+
 function assertData<T>(data: T | null, error: { message: string } | null | undefined) {
 	if (error) throw new Error(error.message);
 	if (data === null) throw new Error("Expected data but received null.");
@@ -434,7 +442,7 @@ export async function getProfileByEmail(email: string) {
 	const { data, error } = await admin()
 		.from("profiles")
 		.select("*")
-		.ilike("email", normalizeEmail(email))
+		.eq("email", normalizeEmail(email))
 		.maybeSingle();
 	if (error) throw new Error(error.message);
 	return (data as ProfileRecord | null) ?? null;
@@ -449,21 +457,10 @@ export async function ensureProfile(input: {
 	const normalizedEmail = normalizeEmail(input.email);
 	const existingByEmail = await getProfileByEmail(normalizedEmail);
 
+	// Profiles are 1:1 with auth users. A profile with this email but a different id
+	// belongs to someone else; never adopt it as the caller's identity.
 	if (existingByEmail && existingByEmail.id !== input.id) {
-		if (input.displayName || input.phone) {
-			const { data, error } = await admin()
-				.from("profiles")
-				.update({
-					display_name: input.displayName ?? existingByEmail.display_name,
-					phone: input.phone ?? existingByEmail.phone,
-				})
-				.eq("id", existingByEmail.id)
-				.select("*")
-				.single();
-			return assertData(data as ProfileRecord | null, error);
-		}
-
-		return existingByEmail;
+		throw new IdentityConflictError();
 	}
 
 	const { data, error } = await admin()
@@ -547,7 +544,7 @@ export async function getTenantByPrimaryEmail(email: string) {
 	const { data, error } = await admin()
 		.from("tenants")
 		.select("*")
-		.ilike("primary_email", normalizeEmail(email))
+		.eq("primary_email", normalizeEmail(email))
 		.maybeSingle();
 	if (error) throw new Error(error.message);
 	return (data as TenantRecord | null) ?? null;
@@ -807,19 +804,19 @@ export async function createRentalDocument(input: {
 	return assertData(data as RentalDocumentRecord | null, error);
 }
 
+// Storage paths never include user-supplied names; the original (sanitized) name is
+// kept only in the document row for display.
 export async function uploadApplicationFile(input: {
 	applicationId: string;
 	documentField: string;
-	file: File;
+	upload: ValidatedUpload;
 }) {
-	const buffer = Buffer.from(await input.file.arrayBuffer());
-	const documentId = randomUUID();
-	const storagePath = `applications/${input.applicationId}/${documentId}-${input.file.name}`;
+	const storagePath = `applications/${input.applicationId}/${randomUUID()}.${input.upload.extension}`;
 	const { error } = await admin()
 		.storage
 		.from("application-documents")
-		.upload(storagePath, buffer, {
-			contentType: input.file.type || "application/octet-stream",
+		.upload(storagePath, input.upload.buffer, {
+			contentType: input.upload.contentType,
 			upsert: false,
 		});
 
@@ -829,16 +826,14 @@ export async function uploadApplicationFile(input: {
 
 export async function uploadRentalFile(input: {
 	rentalId: string;
-	file: File;
+	upload: ValidatedUpload;
 }) {
-	const buffer = Buffer.from(await input.file.arrayBuffer());
-	const documentId = randomUUID();
-	const storagePath = `rentals/${input.rentalId}/${documentId}-${input.file.name}`;
+	const storagePath = `rentals/${input.rentalId}/${randomUUID()}.${input.upload.extension}`;
 	const { error } = await admin()
 		.storage
 		.from("application-documents")
-		.upload(storagePath, buffer, {
-			contentType: input.file.type || "application/octet-stream",
+		.upload(storagePath, input.upload.buffer, {
+			contentType: input.upload.contentType,
 			upsert: false,
 		});
 
@@ -852,9 +847,8 @@ export async function uploadRentalBuffer(input: {
 	contentType: string;
 	buffer: Buffer;
 }) {
-	const documentId = randomUUID();
-	const safeName = input.fileName || "document.pdf";
-	const storagePath = `rentals/${input.rentalId}/${documentId}-${safeName}`;
+	const extension = input.contentType === "application/pdf" ? "pdf" : "bin";
+	const storagePath = `rentals/${input.rentalId}/${randomUUID()}.${extension}`;
 	const { error } = await admin()
 		.storage
 		.from("application-documents")
@@ -866,6 +860,8 @@ export async function uploadRentalBuffer(input: {
 	if (error) throw new Error(error.message);
 	return storagePath;
 }
+
+const SIGNED_DOCUMENT_URL_TTL_SECONDS = 15 * 60;
 
 type StorageDocumentRecord =
 	| ApplicationDocumentRecord
@@ -882,7 +878,7 @@ async function addSignedUrlsToDocuments<T extends { documents?: StorageDocumentR
 					const { data, error } = await admin()
 						.storage
 						.from(document.bucket)
-						.createSignedUrl(document.storage_path, 60 * 60);
+						.createSignedUrl(document.storage_path, SIGNED_DOCUMENT_URL_TTL_SECONDS);
 
 					return {
 						...document,
@@ -2467,7 +2463,7 @@ export async function createTenantInvitation(input: {
 		.from("tenant_invitations")
 		.select("id")
 		.eq("tenant_id", input.tenantId)
-		.ilike("invited_email", normalizedEmail)
+		.eq("invited_email", normalizedEmail)
 		.eq("status", "pending")
 		.maybeSingle();
 
@@ -2512,7 +2508,7 @@ export async function listPendingTenantInvitationsByEmail(email: string) {
 	const { data, error } = await admin()
 		.from("tenant_invitations")
 		.select("*, tenant:tenants(*), invited_by_profile:profiles!tenant_invitations_invited_by_profile_id_fkey(*)")
-		.ilike("invited_email", normalizeEmail(email))
+		.eq("invited_email", normalizeEmail(email))
 		.eq("status", "pending")
 		.order("created_at", { ascending: true });
 	if (error) throw new Error(error.message);
@@ -2568,6 +2564,24 @@ export async function updateTenantInvitation(input: {
 		.single();
 	if (error) throw new Error(error.message);
 	return data as TenantInvitationRecord;
+}
+
+/**
+ * Creates a staff membership for a bootstrap admin only if none exists yet.
+ * Never reactivates or re-promotes an existing (possibly deactivated) membership.
+ */
+export async function ensureBootstrapStaffMembership(profileId: string) {
+	const { error } = await admin()
+		.from("staff_memberships")
+		.upsert(
+			{
+				profile_id: profileId,
+				role: "staff_admin",
+				is_active: true,
+			},
+			{ onConflict: "profile_id", ignoreDuplicates: true }
+		);
+	if (error) throw new Error(error.message);
 }
 
 export async function upsertStaffMembership(input: {

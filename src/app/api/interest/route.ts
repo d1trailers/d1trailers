@@ -1,3 +1,8 @@
+import {
+	enforceRateLimits,
+	getClientIp,
+	RateLimitError,
+} from "@/lib/server/security/rateLimit";
 import { submitInterest } from "@/lib/server/services/interest";
 
 function getErrorStatus(error: unknown) {
@@ -17,6 +22,14 @@ function getErrorStatus(error: unknown) {
 
 export async function POST(request: Request) {
 	try {
+		await enforceRateLimits([
+			{
+				name: "interest:ip",
+				identifier: getClientIp(request),
+				windowSeconds: 60 * 60,
+				max: 10,
+			},
+		]);
 		const body = await request.json();
 		await submitInterest(body);
 
@@ -28,15 +41,20 @@ export async function POST(request: Request) {
 			{ status: 201 }
 		);
 	} catch (error) {
+		if (error instanceof RateLimitError) {
+			return Response.json({ error: error.message }, { status: 429 });
+		}
+
 		console.error("Failed to submit interest request:", error);
+		const status = getErrorStatus(error);
 		return Response.json(
 			{
 				error:
-					error instanceof Error
+					status === 400 && error instanceof Error
 						? error.message
-						: "Failed to submit interest request.",
+						: "We couldn't send your request. Please try again shortly.",
 			},
-			{ status: getErrorStatus(error) }
+			{ status }
 		);
 	}
 }
